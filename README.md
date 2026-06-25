@@ -1,6 +1,8 @@
 # Kantano (LightTask)
 
-Kantano - lightweight Kanban task manager (дипломный проект) на `FastAPI + Vue + PostgreSQL`.
+Kantano - lightweight Kanban task manager на `FastAPI + Vue + PostgreSQL`.
+
+Посмотреть - [Kantano.ru](https://kantano.ru)
 
 ## Содержание
 - [1. Что это](#1-что-это)
