@@ -1,7 +1,7 @@
 # Project Audit Knowledge Base
 
 ## What This Is
-This directory contains a full project audit for `Diploma / Kantano` in `RU + EN` format. The goal is simple: a new engineer or agent should be able to understand architecture, constraints, risks, and operational context by reading only these `.md` files.
+This directory contains a full project audit for `Kantano` in `RU + EN` format. The goal is simple: a new engineer or agent should be able to understand architecture, constraints, risks, and operational context by reading only these `.md` files.
 
 Audit scope includes:
 - System architecture and bounded contexts

@@ -401,7 +401,7 @@ const faqList = [
       <div class="max-w-7xl mx-auto grid grid-cols-2 md:grid-cols-4 gap-12 mb-16">
         <div class="col-span-2 md:col-span-1">
           <div class="flex items-center gap-2 mb-6"><i class="pi pi-bolt text-primary-500 text-2xl"></i><span class="text-xl font-black uppercase tracking-tighter">Kantano</span></div>
-          <p class="text-slate-400 text-sm">Сделано с любовью к коду в рамках дипломного проекта.</p>
+          <p class="text-slate-400 text-sm">Сделано с любовью к коду.</p>
         </div>
         <div>
           <h3 class="font-bold mb-6">Продукт</h3>
@@ -435,7 +435,7 @@ const faqList = [
         </div>
       </div>
       <div class="max-w-7xl mx-auto pt-8 border-t border-slate-800 text-center text-slate-500 text-xs">
-        <p>© 2026 Kantano. Дипломный проект.</p>
+        <p>© 2026 Kantano.</p>
       </div>
     </footer>
   </div>
