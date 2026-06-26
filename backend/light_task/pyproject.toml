@@ -24,9 +24,55 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "black>=25.9.0",
+    "basedpyright>=1.39.8",
+    "pre-commit>=4.6.0",
     "pytest>=8.4.2",
     "pytest-asyncio>=1.2.0",
     "pytest-cov>=7.0.0",
+    "ruff>=0.15.20",
     "schemathesis>=4.7.5",
 ]
+
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+exclude = [
+    ".venv",
+    "alembic",  # Полностью исключаем генерации Alembic из проверок
+]
+
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle errors
+    "F",      # Pyflakes
+    "I",      # isort
+    "B",      # flake8-bugbear
+    "UP",     # pyupgrade
+    "N",      # pep8-naming
+    "S",      # flake8-bandit (безопасность)
+    "ASYNC",  # flake8-async
+    "T20",    # flake8-print (запрет принтов)
+    "RUF",    # Собственные правила Ruff
+]
+
+ignore = [
+    "E501",   # Игнорируем длину строки (доверяем форматировщику)
+]
+
+# Пофайловые исключения:
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["S101", "S105", "S106"]
+"scripts/**/*.py" = ["T201"]
+"src/**/schemas.py" = ["S105"]
+"src/errors.py" = ["S105"]
+
+fixable = ["ALL"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["src"]
+combine-as-imports = true
+
+[tool.basedpyright]
+include = ["src"]               
+typeCheckingMode = "basic"  

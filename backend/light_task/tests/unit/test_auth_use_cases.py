@@ -78,9 +78,7 @@ async def test_login_use_case_returns_token_result(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr("src.auth.use_cases.AuthRepository", FakeAuthRepository)
-    monkeypatch.setattr(
-        "src.auth.use_cases.validate_password", lambda raw, hashed: True
-    )
+    monkeypatch.setattr("src.auth.use_cases.validate_password", lambda raw, hashed: True)
     monkeypatch.setattr(
         "src.auth.use_cases.create_token_result",
         lambda user: SimpleNamespace(
@@ -91,9 +89,7 @@ async def test_login_use_case_returns_token_result(
     )
     use_case = LoginUseCase(lambda: FakeSessionContext(object()))  # type: ignore[arg-type]
 
-    result = await use_case.execute(
-        LoginCommand(username_or_email="user", password="password")
-    )
+    result = await use_case.execute(LoginCommand(username_or_email="user", password="password"))
 
     assert result.access_token == "access"
     assert result.refresh_token == "refresh"

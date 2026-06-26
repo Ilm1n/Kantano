@@ -8,9 +8,9 @@ Create Date: 2025-12-22 00:40:00.772884
 
 from typing import Sequence, Union
 
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "4b1f02efc194"
@@ -44,9 +44,7 @@ def upgrade() -> None:
         type_=sa.String(length=9),
         existing_nullable=False,
     )
-    op.create_index(
-        "idx_tasks_assignee", "tasks", ["assignee_id"], unique=False
-    )
+    op.create_index("idx_tasks_assignee", "tasks", ["assignee_id"], unique=False)
     op.create_index(
         "idx_tasks_column_position",
         "tasks",

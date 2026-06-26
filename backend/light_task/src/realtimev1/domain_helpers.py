@@ -4,12 +4,12 @@ from datetime import datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from src.boards.models import BoardColumn, Task
 from src.boards.schemas import ColumnRead, TaskRead
 from src.invitations.models import ProjectInvitation
 from src.invitations.schemas import InvitationRead
+from src.projects.constants import ProjectRole
 from src.projects.models import Project, ProjectMember
 from src.projects.schemas import ProjectMemberRead, ProjectRead
 from src.tags.models import Tag
@@ -27,7 +27,7 @@ async def get_project_updated_at(session: AsyncSession, project_id: int) -> date
     return await session.scalar(stmt)
 
 
-def dump_project(project: Project, current_user_role: str | None = None) -> dict:
+def dump_project(project: Project, current_user_role: ProjectRole | None = None) -> dict:
     data = ProjectRead.model_validate(project)
     if current_user_role is not None:
         data.current_user_role = current_user_role

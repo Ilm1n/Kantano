@@ -208,9 +208,7 @@ def test_yandex_callback_rejects_invalid_state(
     )
 
     assert response.status_code == 302, response.text
-    assert response.headers["location"] == (
-        "http://localhost:5173/login?oauth_error=invalid_state"
-    )
+    assert response.headers["location"] == ("http://localhost:5173/login?oauth_error=invalid_state")
 
 
 def test_yandex_callback_handles_invalid_code(
@@ -227,9 +225,7 @@ def test_yandex_callback_handles_invalid_code(
     )
 
     assert response.status_code == 302, response.text
-    assert response.headers["location"] == (
-        "http://localhost:5173/login?oauth_error=invalid_code"
-    )
+    assert response.headers["location"] == ("http://localhost:5173/login?oauth_error=invalid_code")
 
 
 def test_yandex_callback_requires_email(client: TestClient, monkeypatch) -> None:
@@ -252,9 +248,7 @@ def test_yandex_callback_requires_email(client: TestClient, monkeypatch) -> None
     )
 
     assert response.status_code == 302, response.text
-    assert response.headers["location"] == (
-        "http://localhost:5173/login?oauth_error=missing_email"
-    )
+    assert response.headers["location"] == ("http://localhost:5173/login?oauth_error=missing_email")
 
 
 def test_password_login_still_works(client: TestClient) -> None:

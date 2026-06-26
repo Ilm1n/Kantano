@@ -30,7 +30,7 @@ class YandexConfig(BaseModel):
     client_secret: str = ""
     redirect_uri: str = "http://localhost:8000/api/auth/yandex/callback"
     authorize_url: str = "https://oauth.yandex.ru/authorize"
-    token_url: str = "https://oauth.yandex.ru/token"
+    token_url: str = "https://oauth.yandex.ru/token"  # noqa: S105
     userinfo_url: str = "https://login.yandex.ru/info"
     state_cookie_name: str = "yandex_oauth_state"
     state_cookie_max_age_seconds: int = 10 * 60
@@ -132,4 +132,4 @@ class Settings(BaseSettings):
     realtime: RealtimeConfig = RealtimeConfig()
 
 
-settings = Settings()
+settings = Settings()  # type: ignore[call-arg]

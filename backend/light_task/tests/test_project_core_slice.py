@@ -236,9 +236,7 @@ def test_project_update_and_delete_realtime_contracts(client: TestClient) -> Non
                 user_ws,
                 RealtimeEventType.PROJECT_LIST_ITEM_UPDATED,
             )
-            assert list_event["payload"]["reason"] == str(
-                RealtimeEventType.PROJECT_UPDATED
-            )
+            assert list_event["payload"]["reason"] == str(RealtimeEventType.PROJECT_UPDATED)
 
             delete_mutation_id = str(uuid4())
             delete_response = client.delete(

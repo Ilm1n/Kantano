@@ -6,36 +6,30 @@ from src.boards.models import Task
 from src.errors import ErrorCode
 from src.shared.errors import ConflictError
 
-
 POSITION_GAP = 65536.0
 MIN_POSITION_DELTA = 0.001
 
 
 class TaskOrderingRepository(Protocol):
-    async def get_first_task_position_for_update(self, column_id: int) -> float | None:
-        pass
+    async def get_first_task_position_for_update(self, column_id: int) -> float | None: ...
 
     async def get_anchor_task_position_for_update(
         self,
         *,
         column_id: int,
         after_task_id: int,
-    ) -> float | None:
-        pass
+    ) -> float | None: ...
 
     async def get_next_task_position_for_update(
         self,
         *,
         column_id: int,
         anchor_position: float,
-    ) -> float | None:
-        pass
+    ) -> float | None: ...
 
-    async def list_column_tasks_for_update(self, column_id: int) -> list[Task]:
-        pass
+    async def list_column_tasks_for_update(self, column_id: int) -> list[Task]: ...
 
-    async def flush(self) -> None:
-        pass
+    async def flush(self) -> None: ...
 
 
 class TaskOrdering:
@@ -49,9 +43,7 @@ class TaskOrdering:
         after_task_id: int | None,
     ) -> float | None:
         if after_task_id is None:
-            first_position = await self._repository.get_first_task_position_for_update(
-                column_id
-            )
+            first_position = await self._repository.get_first_task_position_for_update(column_id)
             if first_position is None:
                 return POSITION_GAP
 

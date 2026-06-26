@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 import redis.asyncio as redis
 
@@ -159,7 +160,7 @@ class PresenceService:
 
         if not self._available:
             try:
-                await self._redis.ping()
+                await cast(Any, self._redis).ping()
             except Exception as exc:
                 await self._mark_unavailable(operation=operation, exc=exc)
                 return None
@@ -202,8 +203,6 @@ class PresenceService:
         )
         self._available = False
         if self._redis:
-            try:
+            with contextlib.suppress(Exception):
                 await self._redis.aclose()
-            except Exception:
-                pass
             self._redis = None

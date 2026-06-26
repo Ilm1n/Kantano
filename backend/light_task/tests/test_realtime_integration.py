@@ -11,10 +11,10 @@ from starlette.websockets import WebSocketDisconnect
 
 from src.config import settings
 from src.realtimev1.events import (
+    SYSTEM_ACTOR_USER_ID,
     RealtimeDeliveryMessage,
     RealtimeEventType,
     RealtimeScope,
-    SYSTEM_ACTOR_USER_ID,
     new_event_envelope,
 )
 from src.realtimev1.redis_event_bus import RedisEventBus
@@ -263,9 +263,7 @@ def test_project_presence_count_lifecycle(client: TestClient) -> None:
             assert changed["payload"]["activeUserCount"] == 2
 
             with client.websocket_connect(f"/ws/projects/{project['id']}") as ws_member_second_tab:
-                ws_member_second_tab.send_json(
-                    {"type": "auth", "accessToken": member["token"]}
-                )
+                ws_member_second_tab.send_json({"type": "auth", "accessToken": member["token"]})
                 _assert_project_presence_event(
                     ws_member_second_tab.receive_json(),
                     expected_count=2,
@@ -282,9 +280,7 @@ def test_project_presence_count_lifecycle(client: TestClient) -> None:
 
             with pytest.raises(WebSocketDisconnect):
                 with client.websocket_connect(f"/ws/projects/{project['id']}") as ws_outsider:
-                    ws_outsider.send_json(
-                        {"type": "auth", "accessToken": outsider["token"]}
-                    )
+                    ws_outsider.send_json({"type": "auth", "accessToken": outsider["token"]})
                     ws_outsider.receive_json()
 
         changed_after_member_close = _receive_event(ws_owner, "project.presence.changed")
@@ -337,8 +333,12 @@ def test_task_created_event_delivery(client: TestClient) -> None:
 
 
 def test_task_moved_event_delivery(client: TestClient) -> None:
-    owner = _register_and_login(client, username="owner_task_move", email="owner_task_move@example.com")
-    member = _register_and_login(client, username="member_task_move", email="member_task_move@example.com")
+    owner = _register_and_login(
+        client, username="owner_task_move", email="owner_task_move@example.com"
+    )
+    member = _register_and_login(
+        client, username="member_task_move", email="member_task_move@example.com"
+    )
     project = _create_project(client, token=owner["token"], name="Task Move Events")
     _add_member_via_invite(
         client,
@@ -379,8 +379,12 @@ def test_task_moved_event_delivery(client: TestClient) -> None:
 
 
 def test_project_updated_emits_user_scope_list_update(client: TestClient) -> None:
-    owner = _register_and_login(client, username="owner_project_update", email="owner_project_update@example.com")
-    member = _register_and_login(client, username="member_project_update", email="member_project_update@example.com")
+    owner = _register_and_login(
+        client, username="owner_project_update", email="owner_project_update@example.com"
+    )
+    member = _register_and_login(
+        client, username="member_project_update", email="member_project_update@example.com"
+    )
     project = _create_project(client, token=owner["token"], name="User Scope Events")
     _add_member_via_invite(
         client,
@@ -404,8 +408,12 @@ def test_project_updated_emits_user_scope_list_update(client: TestClient) -> Non
 
 
 def test_member_removed_flow(client: TestClient) -> None:
-    owner = _register_and_login(client, username="owner_member_removed", email="owner_member_removed@example.com")
-    member = _register_and_login(client, username="member_member_removed", email="member_member_removed@example.com")
+    owner = _register_and_login(
+        client, username="owner_member_removed", email="owner_member_removed@example.com"
+    )
+    member = _register_and_login(
+        client, username="member_member_removed", email="member_member_removed@example.com"
+    )
     project = _create_project(client, token=owner["token"], name="Member Removed Events")
     _add_member_via_invite(
         client,
@@ -415,7 +423,9 @@ def test_member_removed_flow(client: TestClient) -> None:
     )
 
     with _auth_user_ws(client, token=member["token"]) as ws_user:
-        with _auth_project_ws(client, token=member["token"], project_id=project["id"]) as ws_project:
+        with _auth_project_ws(
+            client, token=member["token"], project_id=project["id"]
+        ) as ws_project:
             remove_resp = client.delete(
                 f"/api/projects/{project['id']}/members/{member['user']['id']}",
                 headers=_auth_headers(owner["token"], str(uuid4())),
@@ -469,8 +479,12 @@ def test_invitation_event_is_manager_only(client: TestClient) -> None:
 
 
 def test_presence_lifecycle_and_ttl_cleanup(client: TestClient) -> None:
-    owner = _register_and_login(client, username="owner_presence", email="owner_presence@example.com")
-    member = _register_and_login(client, username="member_presence", email="member_presence@example.com")
+    owner = _register_and_login(
+        client, username="owner_presence", email="owner_presence@example.com"
+    )
+    member = _register_and_login(
+        client, username="member_presence", email="member_presence@example.com"
+    )
     project = _create_project(client, token=owner["token"], name="Presence Flow")
     _add_member_via_invite(
         client,
@@ -541,8 +555,12 @@ def test_presence_event_fallback_to_local_delivery_on_redis_publish_failure(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    owner = _register_and_login(client, username="owner_presence_fallback", email="owner_presence_fallback@example.com")
-    member = _register_and_login(client, username="member_presence_fallback", email="member_presence_fallback@example.com")
+    owner = _register_and_login(
+        client, username="owner_presence_fallback", email="owner_presence_fallback@example.com"
+    )
+    member = _register_and_login(
+        client, username="member_presence_fallback", email="member_presence_fallback@example.com"
+    )
     project = _create_project(client, token=owner["token"], name="Presence Fallback")
     _add_member_via_invite(
         client,

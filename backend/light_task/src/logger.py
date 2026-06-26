@@ -3,13 +3,10 @@ Centralized logging configuration for the Light Task application.
 Provides structured logging with JSON output for production and human-readable for development.
 """
 
+import json
 import logging
 import logging.config
-import json
 from pathlib import Path
-from typing import Any
-
-from src.config import settings
 
 
 class JSONFormatter(logging.Formatter):

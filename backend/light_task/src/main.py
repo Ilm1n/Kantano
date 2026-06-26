@@ -6,28 +6,28 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, ORJSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from src.config import settings
-from src.db.database import db_helper
-from src.errors import ErrorCode, normalize_error_detail, error_response
-from src.logger import setup_logging, get_logger
-from src.shared.errors import AppError
 from src.auth.router import router as auth_router
-from src.boards.router import router as board_router
-from src.projects.router import router as project_router
-from src.users.router import router as user_router
-from src.tags.router import router as tag_router
-from src.invitations.router import router as invitation_router
-from src.realtimev1.router import router as realtime_router
-from src.realtimev1.runtime import build_realtime_runtime
-
-logger = get_logger(__name__)
 
 # модели импортируются для регистрации в metadata
 from src.boards.models import BoardColumn, Task  # noqa: F401
-from src.projects.models import Project, ProjectMember  # noqa: F401
-from src.users.models import User  # noqa: F401
-from src.tags.models import Tag  # noqa: F401
+from src.boards.router import router as board_router
+from src.config import settings
+from src.db.database import db_helper
+from src.errors import ErrorCode, error_response, normalize_error_detail
 from src.invitations.models import ProjectInvitation  # noqa: F401
+from src.invitations.router import router as invitation_router
+from src.logger import get_logger, setup_logging
+from src.projects.models import Project, ProjectMember  # noqa: F401
+from src.projects.router import router as project_router
+from src.realtimev1.router import router as realtime_router
+from src.realtimev1.runtime import build_realtime_runtime
+from src.shared.errors import AppError
+from src.tags.models import Tag  # noqa: F401
+from src.tags.router import router as tag_router
+from src.users.models import User  # noqa: F401
+from src.users.router import router as user_router
+
+logger = get_logger(__name__)
 
 
 @asynccontextmanager

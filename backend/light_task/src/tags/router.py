@@ -64,9 +64,7 @@ def get_delete_tag_use_case(
 async def get_project_tags(
     project_id: int,
     current_user: Annotated[UserPayload, Depends(get_current_user)],
-    use_case: Annotated[
-        ListProjectTagsUseCase, Depends(get_list_project_tags_use_case)
-    ],
+    use_case: Annotated[ListProjectTagsUseCase, Depends(get_list_project_tags_use_case)],
 ):
     query = ListProjectTagsQuery(
         project_id=project_id,

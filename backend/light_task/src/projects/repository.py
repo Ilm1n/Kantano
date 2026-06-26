@@ -16,9 +16,7 @@ class ProjectRepository:
     async def get_project(self, project_id: int) -> Project | None:
         return await self.session.get(Project, project_id)
 
-    async def list_user_projects(
-        self, user_id: int
-    ) -> list[tuple[Project, ProjectRole]]:
+    async def list_user_projects(self, user_id: int) -> list[tuple[Project, ProjectRole]]:
         stmt = (
             select(Project, ProjectMember.role)
             .join(ProjectMember, Project.id == ProjectMember.project_id)
@@ -26,7 +24,7 @@ class ProjectRepository:
             .order_by(Project.updated_at.desc())
         )
         result = await self.session.execute(stmt)
-        return list(result.all())
+        return list(result.tuples().all())
 
     async def get_project_with_role(
         self,
@@ -43,7 +41,7 @@ class ProjectRepository:
             )
         )
         result = await self.session.execute(stmt)
-        return result.first()
+        return result.tuples().first()
 
     async def list_project_members(self, project_id: int) -> list[ProjectMember]:
         stmt = (
@@ -120,18 +118,14 @@ class ProjectRepository:
 
     async def touch_project(self, project_id: int) -> None:
         await self.session.execute(
-            update(Project)
-            .where(Project.id == project_id)
-            .values(updated_at=func.now())
+            update(Project).where(Project.id == project_id).values(updated_at=func.now())
         )
 
     async def flush(self) -> None:
         await self.session.flush()
 
     async def get_project_member_user_ids(self, project_id: int) -> list[int]:
-        stmt = select(ProjectMember.user_id).where(
-            ProjectMember.project_id == project_id
-        )
+        stmt = select(ProjectMember.user_id).where(ProjectMember.project_id == project_id)
         result = await self.session.execute(stmt)
         return [row[0] for row in result.all()]
 

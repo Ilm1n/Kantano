@@ -2,14 +2,14 @@ name: Backend Tests
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
     paths:
       - "backend/light_task/**"
       - ".github/workflows/backend-tests.yml"
       - "docker-compose.test.yml"
       - "docs/realtime-implementation/**"
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
     paths:
       - "backend/light_task/**"
       - ".github/workflows/backend-tests.yml"
@@ -80,6 +80,15 @@ jobs:
 
       - name: Sync Dependencies
         run: uv sync --group dev
+
+      - name: Run Ruff Linter Check
+        run: uv run ruff check .
+
+      - name: Run Ruff Formatter Check
+        run: uv run ruff format --check .
+
+      - name: Run Type Checking (Basedpyright)
+        run: uv run basedpyright
 
       - name: Run Migrations
         run: uv run alembic upgrade head

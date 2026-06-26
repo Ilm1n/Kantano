@@ -3,8 +3,6 @@ from __future__ import annotations
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
-
-from src.realtimev1.events import RealtimeEventType
 from test_create_task_slice import (
     _add_member_via_invite,
     _auth_headers,
@@ -17,6 +15,8 @@ from test_realtime_integration import (
     _auth_user_ws,
     _receive_event,
 )
+
+from src.realtimev1.events import RealtimeEventType
 
 
 def _create_invitation(

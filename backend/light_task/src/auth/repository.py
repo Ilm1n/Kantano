@@ -10,9 +10,7 @@ class AuthRepository:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
-    async def get_user_by_username_or_email(
-        self, username_or_email: str
-    ) -> User | None:
+    async def get_user_by_username_or_email(self, username_or_email: str) -> User | None:
         stmt = select(User).where(
             or_(User.username == username_or_email, User.email == username_or_email)
         )
@@ -22,9 +20,7 @@ class AuthRepository:
         return await self.session.get(User, user_id)
 
     async def get_user_by_yandex_id(self, yandex_id: str) -> User | None:
-        result = await self.session.execute(
-            select(User).where(User.yandex_id == yandex_id)
-        )
+        result = await self.session.execute(select(User).where(User.yandex_id == yandex_id))
         return result.scalar_one_or_none()
 
     async def get_user_by_email(self, email: str) -> User | None:
@@ -32,9 +28,7 @@ class AuthRepository:
         return result.scalar_one_or_none()
 
     async def username_exists(self, username: str) -> bool:
-        result = await self.session.execute(
-            select(User.id).where(User.username == username)
-        )
+        result = await self.session.execute(select(User.id).where(User.username == username))
         return result.scalar_one_or_none() is not None
 
     def add_yandex_user(

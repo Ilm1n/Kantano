@@ -8,9 +8,9 @@ Create Date: 2025-12-15 02:27:36.806932
 
 from typing import Sequence, Union
 
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "25c007f9fa47"
@@ -47,9 +47,7 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id", name=op.f("pk_users")),
     )
     op.create_index(op.f("ix_users_email"), "users", ["email"], unique=True)
-    op.create_index(
-        op.f("ix_users_username"), "users", ["username"], unique=True
-    )
+    op.create_index(op.f("ix_users_username"), "users", ["username"], unique=True)
     op.create_table(
         "projects",
         sa.Column("id", sa.Integer(), nullable=False),
@@ -143,9 +141,7 @@ def upgrade() -> None:
             ondelete="CASCADE",
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_project_members")),
-        sa.UniqueConstraint(
-            "project_id", "user_id", name=op.f("uq_project_members_project_id")
-        ),
+        sa.UniqueConstraint("project_id", "user_id", name=op.f("uq_project_members_project_id")),
     )
     op.create_table(
         "tasks",

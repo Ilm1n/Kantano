@@ -198,15 +198,11 @@ class BoardsDomainEventDispatcher:
                 client_mutation_id=event.client_mutation_id,
             )
 
-            affected_user_ids = await repository.get_project_member_user_ids(
-                task.project_id
-            )
+            affected_user_ids = await repository.get_project_member_user_ids(task.project_id)
             if not affected_user_ids:
                 return
 
-            project_updated_at = await repository.get_project_updated_at(
-                task.project_id
-            )
+            project_updated_at = await repository.get_project_updated_at(task.project_id)
             await self._event_publisher.publish_event(
                 event_type=RealtimeEventType.PROJECT_LIST_ITEM_UPDATED,
                 scope=RealtimeScope.USER,
@@ -316,15 +312,11 @@ class BoardsDomainEventDispatcher:
                 client_mutation_id=event.client_mutation_id,
             )
 
-            affected_user_ids = await repository.get_project_member_user_ids(
-                task.project_id
-            )
+            affected_user_ids = await repository.get_project_member_user_ids(task.project_id)
             if not affected_user_ids:
                 return
 
-            project_updated_at = await repository.get_project_updated_at(
-                task.project_id
-            )
+            project_updated_at = await repository.get_project_updated_at(task.project_id)
             await self._event_publisher.publish_event(
                 event_type=RealtimeEventType.PROJECT_LIST_ITEM_UPDATED,
                 scope=RealtimeScope.USER,

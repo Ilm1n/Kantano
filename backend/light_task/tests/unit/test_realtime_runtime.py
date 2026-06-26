@@ -93,6 +93,4 @@ async def test_member_removed_publishes_project_presence_changed_after_forced_di
     ]
     assert presence_events
     assert presence_events[-1]["payload"]["activeUserCount"] == 1
-    assert member_ws.close_calls == [
-        {"code": 1008, "reason": "project_access_revoked"}
-    ]
+    assert member_ws.close_calls == [{"code": 1008, "reason": "project_access_revoked"}]

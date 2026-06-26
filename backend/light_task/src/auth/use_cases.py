@@ -22,9 +22,7 @@ class LoginUseCase:
         try:
             async with self._session_factory() as session:
                 repository = AuthRepository(session)
-                user = await repository.get_user_by_username_or_email(
-                    command.username_or_email
-                )
+                user = await repository.get_user_by_username_or_email(command.username_or_email)
                 if user is None:
                     auth_logger.warning(
                         "Failed login attempt for %s",

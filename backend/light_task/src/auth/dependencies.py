@@ -1,14 +1,14 @@
 from typing import Annotated
 
 from fastapi import Cookie, Depends
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import src.security as security
 from src.auth.schemas import UserPayload
-from src.logger import auth_logger
-from src.errors import ErrorCode
 from src.db.database import db_helper
+from src.errors import ErrorCode
+from src.logger import auth_logger
 from src.shared.errors import ForbiddenError, UnauthorizedError
 from src.users.models import User
 
@@ -43,7 +43,7 @@ async def get_current_user(
     email = payload.get("email")
     is_active = payload.get("is_active", True)
 
-    if not user_id:
+    if not user_id or not username or not email:
         raise UnauthorizedError(ErrorCode.INVALID_TOKEN_PAYLOAD)
 
     if not is_active:
@@ -58,8 +58,8 @@ async def get_current_user(
 
 
 async def get_current_user_for_refresh(
+    session: Annotated[AsyncSession, Depends(db_helper.get_async_session)],
     refresh_token: Annotated[str | None, Cookie()] = None,
-    session: Annotated[AsyncSession, Depends(db_helper.get_async_session)] = None,
 ) -> User:
     if not refresh_token:
         auth_logger.warning("Refresh token missing in request")

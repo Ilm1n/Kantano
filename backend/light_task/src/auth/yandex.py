@@ -58,9 +58,9 @@ class YandexOAuthClient:
                     },
                     headers={"Content-Type": "application/x-www-form-urlencoded"},
                 )
-        except httpx.HTTPError:
+        except httpx.HTTPError as err:
             auth_logger.exception("Yandex token request failed")
-            raise YandexOAuthError("token_request_failed")
+            raise YandexOAuthError("token_request_failed") from err
 
         if response.status_code != 200:
             auth_logger.warning("Yandex token exchange failed: %s", response.text)
@@ -80,9 +80,9 @@ class YandexOAuthClient:
                     params={"format": "json"},
                     headers={"Authorization": f"OAuth {access_token}"},
                 )
-        except httpx.HTTPError:
+        except httpx.HTTPError as err:
             auth_logger.exception("Yandex profile request failed")
-            raise YandexOAuthError("profile_request_failed")
+            raise YandexOAuthError("profile_request_failed") from err
 
         if response.status_code != 200:
             auth_logger.warning("Yandex profile request failed: %s", response.text)
@@ -106,12 +106,16 @@ def build_yandex_start_result(next_path: str | None) -> YandexStartResult:
     safe_next = safe_next_path(next_path)
     state = secrets.token_urlsafe(32)
     cookie_value = f"{state}|{safe_next}"
-    url = f"{settings.yandex.authorize_url}?{urlencode({
-        'response_type': 'code',
-        'client_id': settings.yandex.client_id,
-        'redirect_uri': settings.yandex.redirect_uri,
-        'state': state,
-    })}"
+    url = f"{settings.yandex.authorize_url}?{
+        urlencode(
+            {
+                'response_type': 'code',
+                'client_id': settings.yandex.client_id,
+                'redirect_uri': settings.yandex.redirect_uri,
+                'state': state,
+            }
+        )
+    }"
     return YandexStartResult(
         authorize_url=url,
         state_cookie_value=cookie_value,

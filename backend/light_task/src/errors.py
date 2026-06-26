@@ -4,7 +4,6 @@ import re
 from enum import StrEnum
 from typing import Any
 
-
 _ERROR_CODE_RE = re.compile(r"^[A-Z0-9_]+$")
 
 

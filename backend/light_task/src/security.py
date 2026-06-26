@@ -1,6 +1,6 @@
 import uuid
+from datetime import UTC, datetime, timedelta
 from functools import lru_cache
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -10,8 +10,8 @@ from pwdlib import PasswordHash
 from src.config import settings
 from src.errors import ErrorCode
 
-ACCESS_TOKEN_TYPE = "access"
-REFRESH_TOKEN_TYPE = "refresh"
+ACCESS_TOKEN_TYPE = "access"  # noqa: S105
+REFRESH_TOKEN_TYPE = "refresh"  # noqa: S105
 
 password_hash = PasswordHash.recommended()
 
@@ -47,7 +47,7 @@ def encode_jwt(
     private_key, _, algorithm = _jwt_material()
 
     to_encode = payload.copy()
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     expire = now + timedelta(minutes=expire_minutes)
 
     to_encode.update(
@@ -68,10 +68,10 @@ def decode_jwt(token: str) -> dict[str, Any]:
 
     try:
         return jwt.decode(token, public_key, algorithms=[algorithm])
-    except jwt.ExpiredSignatureError:
-        raise TokenDecodeError(ErrorCode.TOKEN_EXPIRED)
-    except jwt.PyJWTError:
-        raise TokenDecodeError(ErrorCode.COULD_NOT_VALIDATE)
+    except jwt.ExpiredSignatureError as err:
+        raise TokenDecodeError(ErrorCode.TOKEN_EXPIRED) from err
+    except jwt.PyJWTError as err:
+        raise TokenDecodeError(ErrorCode.COULD_NOT_VALIDATE) from err
 
 
 def create_access_token(

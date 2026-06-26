@@ -24,3 +24,10 @@ This file is the shortest entrypoint for any agent working in this repository.
 Before implementing changes in auth, permissions, invitations, API contract, DB schema, or deploy config:
 - update corresponding `docs/project-audit/*.md`
 - update `07-risk-register.md` status/priority when risk is changed or resolved
+
+## Typing Rule
+- Backend code must pass `uv run basedpyright` from `backend/light_task` before CI.
+- If a function return type is non-optional, every path must explicitly return a value or raise an exception.
+- Do not rely on helper methods or policies to narrow `None`; add explicit runtime checks after permission validation when the value is used.
+- Async context managers that never suppress exceptions must annotate `__aexit__` as `Literal[False]`, not plain `bool`.
+- Protocol methods should use `...` bodies, not `pass`, so type checkers do not infer an implicit `None` return.

@@ -14,9 +14,9 @@ from src.invitations.dto import (
 )
 from src.invitations.events import InvitationsDomainEventDispatcher
 from src.invitations.schemas import (
+    InvitationAcceptResponse,
     InvitationCreate,
     InvitationRead,
-    InvitationAcceptResponse,
 )
 from src.invitations.use_cases import (
     AcceptInvitationUseCase,
@@ -73,9 +73,7 @@ async def create_invitation(
     project_id: int,
     invite_in: InvitationCreate,
     current_user: Annotated[UserPayload, Depends(get_current_user)],
-    use_case: Annotated[
-        CreateInvitationUseCase, Depends(get_create_invitation_use_case)
-    ],
+    use_case: Annotated[CreateInvitationUseCase, Depends(get_create_invitation_use_case)],
     client_mutation_id: Annotated[str | None, Depends(get_client_mutation_id)],
 ):
     command = CreateInvitationCommand(
@@ -115,9 +113,7 @@ async def delete_invitation(
     project_id: int,
     invitation_id: int,
     current_user: Annotated[UserPayload, Depends(get_current_user)],
-    use_case: Annotated[
-        DeleteInvitationUseCase, Depends(get_delete_invitation_use_case)
-    ],
+    use_case: Annotated[DeleteInvitationUseCase, Depends(get_delete_invitation_use_case)],
     client_mutation_id: Annotated[str | None, Depends(get_client_mutation_id)],
 ):
     command = DeleteInvitationCommand(
@@ -136,9 +132,7 @@ async def delete_invitation(
 async def accept_invitation(
     token: str,
     current_user: Annotated[UserPayload, Depends(get_current_user)],
-    use_case: Annotated[
-        AcceptInvitationUseCase, Depends(get_accept_invitation_use_case)
-    ],
+    use_case: Annotated[AcceptInvitationUseCase, Depends(get_accept_invitation_use_case)],
     client_mutation_id: Annotated[str | None, Depends(get_client_mutation_id)],
 ):
     command = AcceptInvitationCommand(

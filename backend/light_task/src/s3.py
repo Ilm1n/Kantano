@@ -1,5 +1,6 @@
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
+from typing import Any, cast
 
 import aioboto3
 from botocore.config import Config
@@ -7,8 +8,8 @@ from botocore.exceptions import ClientError
 from fastapi import HTTPException, status
 
 from src.config import settings
-from src.logger import s3_logger
 from src.errors import ErrorCode
+from src.logger import s3_logger
 
 
 class S3Client:
@@ -17,7 +18,7 @@ class S3Client:
         self.session = aioboto3.Session()
 
     @asynccontextmanager
-    async def get_client(self) -> AsyncGenerator:
+    async def get_client(self) -> AsyncIterator[Any]:
         s3_config = Config(
             region_name=self.config.region_name,
             signature_version="s3v4",
@@ -29,13 +30,14 @@ class S3Client:
             },
         )
 
-        async with self.session.client(
+        client_context = cast(Any, self.session.client)(
             service_name="s3",
             endpoint_url=self.config.endpoint_url,
             aws_access_key_id=self.config.access_key,
             aws_secret_access_key=self.config.secret_key,
             config=s3_config,
-        ) as client:
+        )
+        async with client_context as client:
             yield client
 
     async def upload_file(
@@ -53,12 +55,12 @@ class S3Client:
                     ContentType=content_type,
                 )
                 return f"{self.config.endpoint_url}/{self.config.bucket_name}/{object_name}"
-            except ClientError as e:
+            except ClientError as err:
                 s3_logger.exception(f"S3 Upload Error for {object_name}")
                 raise HTTPException(
                     status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                     detail=ErrorCode.FILE_UPLOAD_FAILED,
-                )
+                ) from err
 
     async def delete_file(self, object_name: str) -> None:
         async with self.get_client() as client:
@@ -67,7 +69,7 @@ class S3Client:
                     Bucket=self.config.bucket_name,
                     Key=object_name,
                 )
-            except ClientError as e:
+            except ClientError:
                 s3_logger.exception(f"S3 Delete Error for {object_name}")
 
 

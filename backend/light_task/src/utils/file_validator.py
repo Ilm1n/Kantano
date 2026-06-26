@@ -1,5 +1,5 @@
 import filetype
-from fastapi import UploadFile, HTTPException, status
+from fastapi import HTTPException, UploadFile, status
 
 from src.errors import ErrorCode
 

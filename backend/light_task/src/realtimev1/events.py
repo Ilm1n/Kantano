@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 from uuid import uuid4
+
+from pydantic import Field
 
 from src.schemas import BaseSchema
 
@@ -70,10 +72,10 @@ class RealtimeEventEnvelope(BaseSchema):
 
 class RealtimeDeliveryMessage(BaseSchema):
     envelope: RealtimeEventEnvelope
-    user_ids: list[int] = []
+    user_ids: list[int] = Field(default_factory=list)
     project_id: int | None = None
     audience: RealtimeAudience = RealtimeAudience.ALL
-    exclude_user_ids: list[int] = []
+    exclude_user_ids: list[int] = Field(default_factory=list)
 
 
 def new_event_envelope(
@@ -92,7 +94,7 @@ def new_event_envelope(
         scope=scope,
         project_id=project_id,
         actor_user_id=actor_user_id,
-        occurred_at=datetime.now(timezone.utc),
+        occurred_at=datetime.now(UTC),
         payload=payload,
         client_mutation_id=client_mutation_id,
     )

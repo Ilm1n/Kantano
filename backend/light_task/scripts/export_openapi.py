@@ -4,7 +4,6 @@ import json
 import sys
 from pathlib import Path
 
-
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 ROOT_DIR = BACKEND_DIR.parents[1]
 FRONTEND_OPENAPI_PATH = ROOT_DIR / "frontend" / "light-task-frontend" / "openapi.json"

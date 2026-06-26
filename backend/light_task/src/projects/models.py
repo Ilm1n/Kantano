@@ -6,11 +6,11 @@ from sqlalchemy import (
     DateTime,
     Enum,
     ForeignKey,
+    Index,
     String,
     Text,
     UniqueConstraint,
     func,
-    Index,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -26,9 +26,7 @@ if TYPE_CHECKING:
 
 class Project(Base, TimestampMixin):
     __tablename__ = "projects"
-    __table_args__ = (
-        CheckConstraint("length(name) > 0", name="check_project_name_length"),
-    )
+    __table_args__ = (CheckConstraint("length(name) > 0", name="check_project_name_length"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(200), nullable=False)

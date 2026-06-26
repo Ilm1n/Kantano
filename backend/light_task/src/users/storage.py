@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Annotated
-from typing import Protocol
+from typing import Annotated, Protocol
 from urllib.parse import urlparse
 
 from fastapi import Depends
@@ -22,14 +21,11 @@ class AvatarStorageGateway(Protocol):
         file_data: bytes,
         object_name: str,
         content_type: str,
-    ) -> str:
-        pass
+    ) -> str: ...
 
-    async def delete_file(self, object_name: str) -> None:
-        pass
+    async def delete_file(self, object_name: str) -> None: ...
 
-    def object_key_from_url(self, url: str | None) -> str | None:
-        pass
+    def object_key_from_url(self, url: str | None) -> str | None: ...
 
 
 class S3AvatarStorageGateway:
@@ -61,10 +57,7 @@ class S3AvatarStorageGateway:
 
         parsed = urlparse(url)
         path = parsed.path.lstrip("/")
-        if (
-            settings.s3.bucket_name not in path
-            and settings.s3.bucket_name not in parsed.netloc
-        ):
+        if settings.s3.bucket_name not in path and settings.s3.bucket_name not in parsed.netloc:
             return None
 
         if path.startswith(settings.s3.bucket_name):

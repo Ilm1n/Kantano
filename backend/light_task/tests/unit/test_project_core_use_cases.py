@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
@@ -70,7 +70,7 @@ class FakeUnitOfWork:
 
 class FakeProjectRepository:
     def __init__(self, session: object) -> None:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         self.project = SimpleNamespace(
             id=123,
             name="Project",
@@ -98,9 +98,7 @@ class FakeProjectRepository:
         self.project.id = project_id
         return self.project
 
-    async def get_member(
-        self, *, project_id: int, user_id: int, with_user: bool = False
-    ):
+    async def get_member(self, *, project_id: int, user_id: int, with_user: bool = False):
         return SimpleNamespace(role=ProjectRole.OWNER)
 
     def add_member(self, **kwargs):
@@ -150,9 +148,7 @@ async def test_create_project_use_case_registers_project_created_event(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     uow = FakeUnitOfWork()
-    monkeypatch.setattr(
-        "src.projects.use_cases.ProjectRepository", FakeProjectRepository
-    )
+    monkeypatch.setattr("src.projects.use_cases.ProjectRepository", FakeProjectRepository)
     use_case = CreateProjectUseCase(lambda: uow)  # type: ignore[arg-type]
 
     result = await use_case.execute(
@@ -181,9 +177,7 @@ async def test_update_project_use_case_registers_project_updated_event(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     uow = FakeUnitOfWork()
-    monkeypatch.setattr(
-        "src.projects.use_cases.ProjectRepository", FakeProjectRepository
-    )
+    monkeypatch.setattr("src.projects.use_cases.ProjectRepository", FakeProjectRepository)
     use_case = UpdateProjectUseCase(lambda: uow)  # type: ignore[arg-type]
 
     result = await use_case.execute(
@@ -210,9 +204,7 @@ async def test_delete_project_use_case_registers_project_deleted_event(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     uow = FakeUnitOfWork()
-    monkeypatch.setattr(
-        "src.projects.use_cases.ProjectRepository", FakeProjectRepository
-    )
+    monkeypatch.setattr("src.projects.use_cases.ProjectRepository", FakeProjectRepository)
     use_case = DeleteProjectUseCase(lambda: uow)  # type: ignore[arg-type]
 
     await use_case.execute(

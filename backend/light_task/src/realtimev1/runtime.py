@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 
 from src.config import settings
 from src.logger import get_logger
@@ -8,11 +9,11 @@ from src.projects.constants import ProjectRole
 from src.realtimev1.connection_manager import ConnectionManager
 from src.realtimev1.event_bus import EventBus
 from src.realtimev1.events import (
+    SYSTEM_ACTOR_USER_ID,
     RealtimeAudience,
     RealtimeDeliveryMessage,
     RealtimeEventType,
     RealtimeScope,
-    SYSTEM_ACTOR_USER_ID,
     new_event_envelope,
 )
 from src.realtimev1.presence import PresenceService
@@ -67,10 +68,8 @@ class RealtimeRuntime:
             await self._event_bus.stop()
             self._event_bus_started = False
         else:
-            try:
+            with contextlib.suppress(Exception):
                 await self._event_bus.stop()
-            except Exception:
-                pass
         logger.info("Realtime runtime stopped")
 
     async def publish(self, message: RealtimeDeliveryMessage) -> None:

@@ -33,6 +33,8 @@ class ProjectAccessChecker:
             requester_member=member,
             allowed_roles=self.allowed_roles,
         )
+        if member is None:
+            raise RuntimeError("Project member is required after permission check")
         return member.project
 
 
@@ -65,9 +67,7 @@ require_project_member = ProjectAccessChecker(
 )
 
 check_project_owner = ProjectPermissionChecker([ProjectRole.OWNER])
-check_project_manager = ProjectPermissionChecker(
-    [ProjectRole.OWNER, ProjectRole.MANAGER]
-)
+check_project_manager = ProjectPermissionChecker([ProjectRole.OWNER, ProjectRole.MANAGER])
 check_project_member = ProjectPermissionChecker(
     [ProjectRole.OWNER, ProjectRole.MANAGER, ProjectRole.MEMBER]
 )

@@ -3,8 +3,8 @@ from datetime import datetime
 from pydantic import Field, field_validator
 
 from src.constants import HEX_COLOR_PATTERN
-from src.schemas import BaseSchema
 from src.projects.constants import ProjectRole
+from src.schemas import BaseSchema
 from src.users.schemas import UserCollaborator
 
 
