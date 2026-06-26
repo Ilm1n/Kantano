@@ -43,7 +43,7 @@ async def get_current_user(
     email = payload.get("email")
     is_active = payload.get("is_active", True)
 
-    if not user_id:
+    if not user_id or not username or not email:
         raise UnauthorizedError(ErrorCode.INVALID_TOKEN_PAYLOAD)
 
     if not is_active:
@@ -58,8 +58,8 @@ async def get_current_user(
 
 
 async def get_current_user_for_refresh(
+    session: Annotated[AsyncSession, Depends(db_helper.get_async_session)],
     refresh_token: Annotated[str | None, Cookie()] = None,
-    session: Annotated[AsyncSession, Depends(db_helper.get_async_session)] = None,
 ) -> User:
     if not refresh_token:
         auth_logger.warning("Refresh token missing in request")

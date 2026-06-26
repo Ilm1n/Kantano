@@ -24,7 +24,7 @@ class ProjectRepository:
             .order_by(Project.updated_at.desc())
         )
         result = await self.session.execute(stmt)
-        return list(result.all())
+        return list(result.tuples().all())
 
     async def get_project_with_role(
         self,
@@ -41,7 +41,7 @@ class ProjectRepository:
             )
         )
         result = await self.session.execute(stmt)
-        return result.first()
+        return result.tuples().first()
 
     async def list_project_members(self, project_id: int) -> list[ProjectMember]:
         stmt = (

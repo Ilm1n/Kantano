@@ -21,14 +21,11 @@ class AvatarStorageGateway(Protocol):
         file_data: bytes,
         object_name: str,
         content_type: str,
-    ) -> str:
-        pass
+    ) -> str: ...
 
-    async def delete_file(self, object_name: str) -> None:
-        pass
+    async def delete_file(self, object_name: str) -> None: ...
 
-    def object_key_from_url(self, url: str | None) -> str | None:
-        pass
+    def object_key_from_url(self, url: str | None) -> str | None: ...
 
 
 class S3AvatarStorageGateway:

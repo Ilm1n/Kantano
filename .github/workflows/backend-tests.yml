@@ -87,6 +87,9 @@ jobs:
       - name: Run Ruff Formatter Check
         run: uv run ruff format --check .
 
+      - name: Run Type Checking (Basedpyright)
+        run: uv run basedpyright
+
       - name: Run Migrations
         run: uv run alembic upgrade head
 

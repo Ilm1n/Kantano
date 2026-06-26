@@ -24,6 +24,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "basedpyright>=1.39.8",
     "pre-commit>=4.6.0",
     "pytest>=8.4.2",
     "pytest-asyncio>=1.2.0",
@@ -71,3 +72,7 @@ fixable = ["ALL"]
 [tool.ruff.lint.isort]
 known-first-party = ["src"]
 combine-as-imports = true
+
+[tool.basedpyright]
+include = ["src"]               
+typeCheckingMode = "basic"  

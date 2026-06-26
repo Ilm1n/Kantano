@@ -11,30 +11,25 @@ MIN_POSITION_DELTA = 0.001
 
 
 class TaskOrderingRepository(Protocol):
-    async def get_first_task_position_for_update(self, column_id: int) -> float | None:
-        pass
+    async def get_first_task_position_for_update(self, column_id: int) -> float | None: ...
 
     async def get_anchor_task_position_for_update(
         self,
         *,
         column_id: int,
         after_task_id: int,
-    ) -> float | None:
-        pass
+    ) -> float | None: ...
 
     async def get_next_task_position_for_update(
         self,
         *,
         column_id: int,
         anchor_position: float,
-    ) -> float | None:
-        pass
+    ) -> float | None: ...
 
-    async def list_column_tasks_for_update(self, column_id: int) -> list[Task]:
-        pass
+    async def list_column_tasks_for_update(self, column_id: int) -> list[Task]: ...
 
-    async def flush(self) -> None:
-        pass
+    async def flush(self) -> None: ...
 
 
 class TaskOrdering:

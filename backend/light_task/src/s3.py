@@ -1,5 +1,6 @@
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import Any, cast
 
 import aioboto3
 from botocore.config import Config
@@ -17,7 +18,7 @@ class S3Client:
         self.session = aioboto3.Session()
 
     @asynccontextmanager
-    async def get_client(self) -> AsyncGenerator:
+    async def get_client(self) -> AsyncIterator[Any]:
         s3_config = Config(
             region_name=self.config.region_name,
             signature_version="s3v4",
@@ -29,13 +30,14 @@ class S3Client:
             },
         )
 
-        async with self.session.client(
+        client_context = cast(Any, self.session.client)(
             service_name="s3",
             endpoint_url=self.config.endpoint_url,
             aws_access_key_id=self.config.access_key,
             aws_secret_access_key=self.config.secret_key,
             config=s3_config,
-        ) as client:
+        )
+        async with client_context as client:
             yield client
 
     async def upload_file(

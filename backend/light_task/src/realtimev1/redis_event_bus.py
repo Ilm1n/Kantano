@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from typing import Any, cast
 
 import redis.asyncio as redis
 
@@ -25,7 +26,7 @@ class RedisEventBus(EventBus):
         self._redis_url = redis_url
         self._channel = channel
         self._redis: redis.Redis | None = None
-        self._pubsub: redis.client.PubSub | None = None
+        self._pubsub: Any | None = None
         self._listener_task: asyncio.Task[None] | None = None
         self._consumer: DeliveryConsumer | None = None
 
@@ -39,9 +40,10 @@ class RedisEventBus(EventBus):
             encoding="utf-8",
             decode_responses=True,
         )
-        await self._redis.ping()
-        self._pubsub = self._redis.pubsub()
-        await self._pubsub.subscribe(self._channel)
+        await cast(Any, self._redis).ping()
+        pubsub = cast(Any, self._redis).pubsub()
+        await pubsub.subscribe(self._channel)
+        self._pubsub = pubsub
 
         self._listener_task = asyncio.create_task(self._listen_loop())
         logger.info("Realtime Redis subscriber started on channel=%s", self._channel)

@@ -132,4 +132,4 @@ class Settings(BaseSettings):
     realtime: RealtimeConfig = RealtimeConfig()
 
 
-settings = Settings()
+settings = Settings()  # type: ignore[call-arg]

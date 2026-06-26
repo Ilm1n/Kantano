@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 from collections import defaultdict
 from dataclasses import dataclass
+from typing import Any, cast
 
 import redis.asyncio as redis
 
@@ -159,7 +160,7 @@ class PresenceService:
 
         if not self._available:
             try:
-                await self._redis.ping()
+                await cast(Any, self._redis).ping()
             except Exception as exc:
                 await self._mark_unavailable(operation=operation, exc=exc)
                 return None
