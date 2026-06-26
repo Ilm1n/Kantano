@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
@@ -118,7 +118,7 @@ async def test_create_task_use_case_registers_task_created_event(
             description=None,
             priority=TaskPriority.MEDIUM,
             assignee_id=None,
-            deadline_at=datetime.now(timezone.utc),
+            deadline_at=datetime.now(UTC),
             tag_ids=[],
             client_mutation_id="mutation-1",
         )

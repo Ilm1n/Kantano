@@ -19,7 +19,7 @@ def create_token_result(user: User) -> TokenResult:
     return TokenResult(
         access_token=security.create_access_token(user_data=token_payload),
         refresh_token=security.create_refresh_token(user_id=user.id),
-        token_type="bearer",
+        token_type="bearer",  # noqa: S106
     )
 
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
@@ -70,7 +70,7 @@ class FakeUnitOfWork:
 
 class FakeProjectRepository:
     def __init__(self, session: object) -> None:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         self.project = SimpleNamespace(
             id=123,
             name="Project",

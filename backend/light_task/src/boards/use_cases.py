@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -520,7 +520,7 @@ class MoveTaskUseCase:
 
                     task.column_id = command.new_column_id
                     task.position = new_position
-                    task.updated_at = datetime.now(timezone.utc)
+                    task.updated_at = datetime.now(UTC)
                     repository.save_task(task)
                     await repository.touch_project(task.project_id)
                     await repository.flush()
@@ -608,7 +608,7 @@ class UpdateTaskUseCase:
                 for key, value in command.changes.items():
                     setattr(task, key, value)
 
-                task.updated_at = datetime.now(timezone.utc)
+                task.updated_at = datetime.now(UTC)
                 repository.save_task(task)
                 await repository.touch_project(task.project_id)
                 await repository.flush()

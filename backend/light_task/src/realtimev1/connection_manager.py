@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -240,8 +241,6 @@ class ConnectionManager:
         reason: str,
     ) -> None:
         for ws in connections:
-            try:
+            with contextlib.suppress(Exception):
                 await ws.close(code=code, reason=reason)
-            except Exception:
-                pass
             await self.unregister(ws)

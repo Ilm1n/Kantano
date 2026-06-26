@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select
@@ -41,7 +41,7 @@ def validate_access_token(token: str) -> WsAuthContext:
     exp = payload.get("exp")
     expires_at: datetime | None = None
     if isinstance(exp, (int, float)):
-        expires_at = datetime.fromtimestamp(exp, tz=timezone.utc)
+        expires_at = datetime.fromtimestamp(exp, tz=UTC)
 
     return WsAuthContext(
         user_id=int(user_id),

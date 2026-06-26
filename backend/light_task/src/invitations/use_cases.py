@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import secrets
 from collections.abc import Callable
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -104,7 +104,7 @@ class CreateInvitationUseCase:
                     role=command.role,
                     email=command.email,
                     max_uses=command.max_uses,
-                    expires_at=datetime.now(timezone.utc) + timedelta(days=command.expires_in_days),
+                    expires_at=datetime.now(UTC) + timedelta(days=command.expires_in_days),
                 )
                 repository.add_invitation(invitation)
                 await repository.touch_project(command.project_id)
@@ -199,7 +199,7 @@ class AcceptInvitationUseCase:
                 if invitation is None:
                     raise NotFoundError(ErrorCode.INVITATION_NOT_FOUND)
 
-                if invitation.expires_at < datetime.now(timezone.utc):
+                if invitation.expires_at < datetime.now(UTC):
                     raise GoneError(ErrorCode.INVITATION_EXPIRED)
 
                 if invitation.max_uses is not None and invitation.used_count >= invitation.max_uses:

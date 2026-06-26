@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -75,7 +75,7 @@ class FakeInvitationRepository:
             email=None,
             max_uses=1,
             used_count=0,
-            expires_at=datetime.now(timezone.utc) + timedelta(days=1),
+            expires_at=datetime.now(UTC) + timedelta(days=1),
         )
 
     async def get_project_member(self, *, project_id: int, user_id: int):

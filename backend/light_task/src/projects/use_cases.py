@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -233,7 +233,7 @@ class UpdateProjectUseCase:
 
                 for key, value in command.changes.items():
                     setattr(project, key, value)
-                project.updated_at = datetime.now(timezone.utc)
+                project.updated_at = datetime.now(UTC)
                 repository.save_project(project)
                 await repository.flush()
                 await repository.refresh_project(project)

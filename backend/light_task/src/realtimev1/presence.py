@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from collections import defaultdict
 from dataclasses import dataclass
 
@@ -201,8 +202,6 @@ class PresenceService:
         )
         self._available = False
         if self._redis:
-            try:
+            with contextlib.suppress(Exception):
                 await self._redis.aclose()
-            except Exception:
-                pass
             self._redis = None

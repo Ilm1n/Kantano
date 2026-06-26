@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
+import contextlib
+from datetime import UTC, datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
@@ -433,17 +434,15 @@ def _spawn_expiry_task(
 
 
 async def _close_at_expiry(websocket: WebSocket, expires_at: datetime) -> None:
-    delay = (expires_at - datetime.now(timezone.utc)).total_seconds()
+    delay = (expires_at - datetime.now(UTC)).total_seconds()
     if delay > 0:
         await asyncio.sleep(delay)
     await _safe_close(websocket, reason="TOKEN_EXPIRED")
 
 
 async def _safe_close(websocket: WebSocket, *, reason: str) -> None:
-    try:
+    with contextlib.suppress(Exception):
         await websocket.close(code=1008, reason=reason)
-    except Exception:
-        pass
 
 
 def _is_ping(message: Any) -> bool:

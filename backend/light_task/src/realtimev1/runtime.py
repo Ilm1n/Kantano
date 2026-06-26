@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 
 from src.config import settings
 from src.logger import get_logger
@@ -67,10 +68,8 @@ class RealtimeRuntime:
             await self._event_bus.stop()
             self._event_bus_started = False
         else:
-            try:
+            with contextlib.suppress(Exception):
                 await self._event_bus.stop()
-            except Exception:
-                pass
         logger.info("Realtime runtime stopped")
 
     async def publish(self, message: RealtimeDeliveryMessage) -> None:

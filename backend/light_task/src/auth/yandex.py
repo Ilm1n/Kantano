@@ -58,9 +58,9 @@ class YandexOAuthClient:
                     },
                     headers={"Content-Type": "application/x-www-form-urlencoded"},
                 )
-        except httpx.HTTPError:
+        except httpx.HTTPError as err:
             auth_logger.exception("Yandex token request failed")
-            raise YandexOAuthError("token_request_failed")
+            raise YandexOAuthError("token_request_failed") from err
 
         if response.status_code != 200:
             auth_logger.warning("Yandex token exchange failed: %s", response.text)
@@ -80,9 +80,9 @@ class YandexOAuthClient:
                     params={"format": "json"},
                     headers={"Authorization": f"OAuth {access_token}"},
                 )
-        except httpx.HTTPError:
+        except httpx.HTTPError as err:
             auth_logger.exception("Yandex profile request failed")
-            raise YandexOAuthError("profile_request_failed")
+            raise YandexOAuthError("profile_request_failed") from err
 
         if response.status_code != 200:
             auth_logger.warning("Yandex profile request failed: %s", response.text)

@@ -1,5 +1,5 @@
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
 
 import aioboto3
 from botocore.config import Config
@@ -53,12 +53,12 @@ class S3Client:
                     ContentType=content_type,
                 )
                 return f"{self.config.endpoint_url}/{self.config.bucket_name}/{object_name}"
-            except ClientError:
+            except ClientError as err:
                 s3_logger.exception(f"S3 Upload Error for {object_name}")
                 raise HTTPException(
                     status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                     detail=ErrorCode.FILE_UPLOAD_FAILED,
-                )
+                ) from err
 
     async def delete_file(self, object_name: str) -> None:
         async with self.get_client() as client:
