@@ -191,9 +191,7 @@ class UploadAvatarUseCase:
                 if user is None:
                     raise NotFoundError(ErrorCode.USER_NOT_FOUND)
 
-                old_avatar_object_key = self._storage.object_key_from_url(
-                    user.avatar_url
-                )
+                old_avatar_object_key = self._storage.object_key_from_url(user.avatar_url)
                 object_name = self._object_name_factory(user.id, command.extension)
 
                 try:
@@ -255,9 +253,7 @@ class DeleteAvatarUseCase:
                 if user is None:
                     raise NotFoundError(ErrorCode.USER_NOT_FOUND)
 
-                old_avatar_object_key = self._storage.object_key_from_url(
-                    user.avatar_url
-                )
+                old_avatar_object_key = self._storage.object_key_from_url(user.avatar_url)
                 if old_avatar_object_key is None:
                     return AvatarMutationResult(user=user)
 

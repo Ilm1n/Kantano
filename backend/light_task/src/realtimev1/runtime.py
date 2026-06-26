@@ -8,11 +8,11 @@ from src.projects.constants import ProjectRole
 from src.realtimev1.connection_manager import ConnectionManager
 from src.realtimev1.event_bus import EventBus
 from src.realtimev1.events import (
+    SYSTEM_ACTOR_USER_ID,
     RealtimeAudience,
     RealtimeDeliveryMessage,
     RealtimeEventType,
     RealtimeScope,
-    SYSTEM_ACTOR_USER_ID,
     new_event_envelope,
 )
 from src.realtimev1.presence import PresenceService

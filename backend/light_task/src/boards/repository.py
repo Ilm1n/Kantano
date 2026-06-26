@@ -85,9 +85,7 @@ class BoardRepository:
         return (await self.session.execute(stmt)).scalar_one_or_none()
 
     async def get_max_column_position(self, project_id: int) -> float:
-        stmt = select(func.max(BoardColumn.position)).where(
-            BoardColumn.project_id == project_id
-        )
+        stmt = select(func.max(BoardColumn.position)).where(BoardColumn.project_id == project_id)
         return await self.session.scalar(stmt) or 0.0
 
     def add_column(
@@ -206,9 +204,7 @@ class BoardRepository:
 
     async def touch_project(self, project_id: int) -> None:
         await self.session.execute(
-            update(Project)
-            .where(Project.id == project_id)
-            .values(updated_at=func.now())
+            update(Project).where(Project.id == project_id).values(updated_at=func.now())
         )
 
     async def get_task_with_tags(self, task_id: int) -> Task | None:
@@ -273,9 +269,7 @@ class BoardRepository:
         return list((await self.session.execute(stmt)).scalars().all())
 
     async def get_project_member_user_ids(self, project_id: int) -> list[int]:
-        stmt = select(ProjectMember.user_id).where(
-            ProjectMember.project_id == project_id
-        )
+        stmt = select(ProjectMember.user_id).where(ProjectMember.project_id == project_id)
         result = await self.session.execute(stmt)
         return [row[0] for row in result.all()]
 

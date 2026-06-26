@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Annotated
-from typing import Protocol
+from typing import Annotated, Protocol
 from urllib.parse import urlparse
 
 from fastapi import Depends
@@ -61,10 +60,7 @@ class S3AvatarStorageGateway:
 
         parsed = urlparse(url)
         path = parsed.path.lstrip("/")
-        if (
-            settings.s3.bucket_name not in path
-            and settings.s3.bucket_name not in parsed.netloc
-        ):
+        if settings.s3.bucket_name not in path and settings.s3.bucket_name not in parsed.netloc:
             return None
 
         if path.startswith(settings.s3.bucket_name):

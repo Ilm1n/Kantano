@@ -2,9 +2,9 @@ from typing import Annotated
 
 from fastapi import (
     APIRouter,
+    BackgroundTasks,
     Depends,
     status,
-    BackgroundTasks,
 )
 
 from src.auth.dependencies import get_current_user
@@ -23,18 +23,18 @@ from src.users.dto import (
 from src.users.schemas import (
     UserCreate,
     UserPasswordUpdate,
+    UserPublic,
     UserRead,
     UserUpdate,
-    UserPublic,
 )
 from src.users.storage import AvatarStorageGateway, get_avatar_storage_gateway
 from src.users.use_cases import (
     DeleteAvatarUseCase,
     GetUserUseCase,
     RegisterUserUseCase,
-    UploadAvatarUseCase,
     UpdateUserPasswordUseCase,
     UpdateUserUseCase,
+    UploadAvatarUseCase,
 )
 
 router = APIRouter(prefix="/users", tags=["Users"])
@@ -111,9 +111,7 @@ async def update_user_me(
 async def update_user_password(
     password_update: UserPasswordUpdate,
     current_user: Annotated[UserPayload, Depends(get_current_user)],
-    use_case: Annotated[
-        UpdateUserPasswordUseCase, Depends(get_update_user_password_use_case)
-    ],
+    use_case: Annotated[UpdateUserPasswordUseCase, Depends(get_update_user_password_use_case)],
 ):
     command = UpdateUserPasswordCommand(
         user_id=current_user.sub,

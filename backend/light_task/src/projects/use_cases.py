@@ -30,9 +30,9 @@ from src.projects.models import ProjectMember
 from src.projects.permissions import ProjectMemberPolicy
 from src.projects.repository import ProjectRepository
 from src.projects.schemas import ProjectRead
+from src.shared.errors import AppError, DatabaseError, NotFoundError
 from src.tags.constants import DEFAULT_PROJECT_TAGS
 from src.tags.models import Tag
-from src.shared.errors import AppError, DatabaseError, NotFoundError
 
 
 class ListUserProjectsUseCase:
@@ -123,9 +123,7 @@ class ListProjectMembersUseCase:
                     project_id=query.project_id,
                     user_id=query.actor_user_id,
                 )
-                self._policy.ensure_project_member_can_read(
-                    requester_member=requester_member
-                )
+                self._policy.ensure_project_member_can_read(requester_member=requester_member)
                 return await repository.list_project_members(query.project_id)
         except AppError:
             raise
@@ -294,9 +292,7 @@ class DeleteProjectUseCase:
                 if project is None:
                     raise NotFoundError(ErrorCode.PROJECT_NOT_FOUND)
 
-                affected_user_ids = await repository.get_project_member_user_ids(
-                    command.project_id
-                )
+                affected_user_ids = await repository.get_project_member_user_ids(command.project_id)
                 await repository.delete_project(project)
                 await repository.flush()
                 uow.collect_event(
@@ -415,9 +411,7 @@ class UpdateMemberRoleUseCase:
                 repository.save_member(target_member)
                 await repository.touch_project(command.project_id)
                 await repository.flush()
-                affected_user_ids = await repository.get_project_member_user_ids(
-                    command.project_id
-                )
+                affected_user_ids = await repository.get_project_member_user_ids(command.project_id)
                 uow.collect_event(
                     MemberRoleChanged(
                         user_id=command.user_id,

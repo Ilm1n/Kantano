@@ -7,11 +7,10 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
 
-from src.config import settings
-from src.db.base import Base
-
 # Модели
 from src.boards.models import BoardColumn, Task  # noqa: F401
+from src.config import settings
+from src.db.base import Base
 from src.invitations.models import ProjectInvitation  # noqa: F401
 from src.projects.models import Project, ProjectMember  # noqa: F401
 from src.tags.models import Tag  # noqa: F401

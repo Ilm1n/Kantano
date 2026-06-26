@@ -81,9 +81,7 @@ async def login_for_access_token(
 
 @router.get("/yandex/start", include_in_schema=False)
 async def start_yandex_auth(
-    use_case: Annotated[
-        StartYandexAuthUseCase, Depends(get_start_yandex_auth_use_case)
-    ],
+    use_case: Annotated[StartYandexAuthUseCase, Depends(get_start_yandex_auth_use_case)],
     next_path: Annotated[str | None, Query(alias="next")] = None,
 ) -> RedirectResponse:
     result = use_case.execute(next_path)

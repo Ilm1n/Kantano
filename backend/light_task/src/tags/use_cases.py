@@ -93,9 +93,7 @@ class CreateTagUseCase:
                 repository.add_tag(tag)
                 await repository.touch_project(command.project_id)
                 await repository.flush()
-                affected_user_ids = await repository.get_project_member_user_ids(
-                    command.project_id
-                )
+                affected_user_ids = await repository.get_project_member_user_ids(command.project_id)
                 uow.collect_event(
                     TagCreated(
                         tag=tag,
@@ -151,9 +149,7 @@ class UpdateTagUseCase:
                 repository.save_tag(tag)
                 await repository.touch_project(tag.project_id)
                 await repository.flush()
-                affected_user_ids = await repository.get_project_member_user_ids(
-                    tag.project_id
-                )
+                affected_user_ids = await repository.get_project_member_user_ids(tag.project_id)
                 uow.collect_event(
                     TagUpdated(
                         tag=tag,
@@ -208,9 +204,7 @@ class DeleteTagUseCase:
                 await repository.delete_tag(tag)
                 await repository.touch_project(project_id)
                 await repository.flush()
-                affected_user_ids = await repository.get_project_member_user_ids(
-                    project_id
-                )
+                affected_user_ids = await repository.get_project_member_user_ids(project_id)
                 uow.collect_event(
                     TagDeleted(
                         tag_id=tag_id,

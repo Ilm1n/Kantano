@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import Depends, Header, HTTPException, Request, WebSocket, status
+from fastapi import Header, HTTPException, Request, WebSocket, status
 
 from src.realtimev1.publisher import DomainEventPublisher
 from src.realtimev1.runtime import RealtimeRuntime

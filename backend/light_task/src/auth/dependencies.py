@@ -1,14 +1,14 @@
 from typing import Annotated
 
 from fastapi import Cookie, Depends
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import src.security as security
 from src.auth.schemas import UserPayload
-from src.logger import auth_logger
-from src.errors import ErrorCode
 from src.db.database import db_helper
+from src.errors import ErrorCode
+from src.logger import auth_logger
 from src.shared.errors import ForbiddenError, UnauthorizedError
 from src.users.models import User
 

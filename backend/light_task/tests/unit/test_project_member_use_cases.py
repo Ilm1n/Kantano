@@ -58,9 +58,7 @@ class FakeProjectRepository:
         )
         self.deleted: list[object] = []
 
-    async def get_member(
-        self, *, project_id: int, user_id: int, with_user: bool = False
-    ):
+    async def get_member(self, *, project_id: int, user_id: int, with_user: bool = False):
         if user_id == 1:
             return self.requester
         if user_id == 2:
@@ -104,9 +102,7 @@ async def test_remove_member_use_case_registers_member_removed_event(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     uow = FakeUnitOfWork()
-    monkeypatch.setattr(
-        "src.projects.use_cases.ProjectRepository", FakeProjectRepository
-    )
+    monkeypatch.setattr("src.projects.use_cases.ProjectRepository", FakeProjectRepository)
     use_case = RemoveMemberUseCase(lambda: uow)  # type: ignore[arg-type]
 
     await use_case.execute(
@@ -133,9 +129,7 @@ async def test_update_member_role_use_case_registers_role_changed_event(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     uow = FakeUnitOfWork()
-    monkeypatch.setattr(
-        "src.projects.use_cases.ProjectRepository", FakeProjectRepository
-    )
+    monkeypatch.setattr("src.projects.use_cases.ProjectRepository", FakeProjectRepository)
     use_case = UpdateMemberRoleUseCase(lambda: uow)  # type: ignore[arg-type]
 
     result = await use_case.execute(

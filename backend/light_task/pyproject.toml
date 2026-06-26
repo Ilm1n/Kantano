@@ -24,9 +24,19 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "black>=25.9.0",
+    "pre-commit>=4.6.0",
     "pytest>=8.4.2",
     "pytest-asyncio>=1.2.0",
     "pytest-cov>=7.0.0",
+    "ruff>=0.15.20",
     "schemathesis>=4.7.5",
 ]
+
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F",  "I"]
+ignore = ["E501"]

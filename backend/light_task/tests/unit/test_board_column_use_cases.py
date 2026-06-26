@@ -13,8 +13,8 @@ from src.boards.dto import (
 from src.boards.events import (
     ColumnCreated,
     ColumnDeleted,
-    ColumnUpdated,
     ColumnsReordered,
+    ColumnUpdated,
 )
 from src.boards.repository import BoardRepository
 from src.boards.use_cases import (
@@ -99,9 +99,7 @@ class FakeBoardRepository:
     async def delete_column(self, column: object) -> None:
         return None
 
-    async def list_project_columns_by_ids(
-        self, *, project_id: int, column_ids: list[int]
-    ):
+    async def list_project_columns_by_ids(self, *, project_id: int, column_ids: list[int]):
         return self.columns
 
     async def touch_project(self, project_id: int) -> None:

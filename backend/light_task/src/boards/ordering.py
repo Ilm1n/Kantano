@@ -6,7 +6,6 @@ from src.boards.models import Task
 from src.errors import ErrorCode
 from src.shared.errors import ConflictError
 
-
 POSITION_GAP = 65536.0
 MIN_POSITION_DELTA = 0.001
 
@@ -49,9 +48,7 @@ class TaskOrdering:
         after_task_id: int | None,
     ) -> float | None:
         if after_task_id is None:
-            first_position = await self._repository.get_first_task_position_for_update(
-                column_id
-            )
+            first_position = await self._repository.get_first_task_position_for_update(column_id)
             if first_position is None:
                 return POSITION_GAP
 

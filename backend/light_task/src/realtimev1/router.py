@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timezone
-from typing import Any, Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 
@@ -424,7 +424,9 @@ async def _cleanup_presence_on_disconnect(
         )
 
 
-def _spawn_expiry_task(websocket: WebSocket, expires_at: datetime | None) -> asyncio.Task[None] | None:
+def _spawn_expiry_task(
+    websocket: WebSocket, expires_at: datetime | None
+) -> asyncio.Task[None] | None:
     if not expires_at:
         return None
     return asyncio.create_task(_close_at_expiry(websocket, expires_at))

@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, status, Query
+from fastapi import APIRouter, Depends, Query, status
 
 from src.auth.dependencies import get_current_user
 from src.auth.schemas import UserPayload
@@ -21,14 +21,14 @@ from src.boards.events import BoardsDomainEventDispatcher
 from src.boards.schemas import (
     ColumnCreate,
     ColumnRead,
+    ColumnReorderRequest,
+    ColumnUpdate,
     TaskCreate,
     TaskMove,
-    TaskRead,
-    TaskUpdate,
-    ColumnUpdate,
-    ColumnReorderRequest,
     TaskMoveResponse,
     TaskPreview,
+    TaskRead,
+    TaskUpdate,
 )
 from src.boards.use_cases import (
     CreateColumnUseCase,
@@ -45,9 +45,9 @@ from src.boards.use_cases import (
 )
 from src.db.database import db_helper
 from src.db.unit_of_work import UnitOfWork
+from src.projects.dependencies import check_project_member
 from src.realtimev1.dependencies import get_client_mutation_id, get_event_publisher
 from src.realtimev1.publisher import DomainEventPublisher
-from src.projects.dependencies import check_project_member
 
 router = APIRouter(tags=["Boards"])
 
@@ -274,9 +274,7 @@ async def create_task(
 async def get_project_tasks(
     project_id: int,
     current_user: Annotated[UserPayload, Depends(get_current_user)],
-    use_case: Annotated[
-        ListProjectTasksUseCase, Depends(get_list_project_tasks_use_case)
-    ],
+    use_case: Annotated[ListProjectTasksUseCase, Depends(get_list_project_tasks_use_case)],
     assignee_id: Annotated[int | None, Query()] = None,
     tag_ids: Annotated[list[int] | None, Query()] = None,
     search: Annotated[str | None, Query(min_length=3)] = None,

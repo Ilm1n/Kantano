@@ -65,9 +65,7 @@ require_project_member = ProjectAccessChecker(
 )
 
 check_project_owner = ProjectPermissionChecker([ProjectRole.OWNER])
-check_project_manager = ProjectPermissionChecker(
-    [ProjectRole.OWNER, ProjectRole.MANAGER]
-)
+check_project_manager = ProjectPermissionChecker([ProjectRole.OWNER, ProjectRole.MANAGER])
 check_project_member = ProjectPermissionChecker(
     [ProjectRole.OWNER, ProjectRole.MANAGER, ProjectRole.MEMBER]
 )

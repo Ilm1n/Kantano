@@ -7,8 +7,8 @@ from botocore.exceptions import ClientError
 from fastapi import HTTPException, status
 
 from src.config import settings
-from src.logger import s3_logger
 from src.errors import ErrorCode
+from src.logger import s3_logger
 
 
 class S3Client:
@@ -53,7 +53,7 @@ class S3Client:
                     ContentType=content_type,
                 )
                 return f"{self.config.endpoint_url}/{self.config.bucket_name}/{object_name}"
-            except ClientError as e:
+            except ClientError:
                 s3_logger.exception(f"S3 Upload Error for {object_name}")
                 raise HTTPException(
                     status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -67,7 +67,7 @@ class S3Client:
                     Bucket=self.config.bucket_name,
                     Key=object_name,
                 )
-            except ClientError as e:
+            except ClientError:
                 s3_logger.exception(f"S3 Delete Error for {object_name}")
 
 

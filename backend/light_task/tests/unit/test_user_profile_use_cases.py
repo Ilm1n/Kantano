@@ -5,22 +5,22 @@ from types import SimpleNamespace
 
 import pytest
 
+from src.errors import ErrorCode
+from src.shared.errors import DatabaseError
 from src.users.dto import (
-    UploadAvatarCommand,
     RegisterUserCommand,
     UpdateUserCommand,
     UpdateUserPasswordCommand,
+    UploadAvatarCommand,
 )
-from src.errors import ErrorCode
-from src.shared.errors import DatabaseError
 from src.users.repository import UserRepository
+from src.users.storage import LocalAvatarStorageGateway
 from src.users.use_cases import (
     RegisterUserUseCase,
-    UploadAvatarUseCase,
     UpdateUserPasswordUseCase,
     UpdateUserUseCase,
+    UploadAvatarUseCase,
 )
-from src.users.storage import LocalAvatarStorageGateway
 
 
 class FakeSession:
@@ -100,9 +100,7 @@ class FakeAvatarStorage:
     def __init__(self) -> None:
         self.deleted: list[str] = []
 
-    async def upload_file(
-        self, *, file_data: bytes, object_name: str, content_type: str
-    ):
+    async def upload_file(self, *, file_data: bytes, object_name: str, content_type: str):
         return f"http://storage.local/test/{object_name}"
 
     async def delete_file(self, object_name: str) -> None:
@@ -139,9 +137,7 @@ async def test_register_user_use_case_hashes_password(
 ) -> None:
     uow = FakeUnitOfWork()
     monkeypatch.setattr("src.users.use_cases.UserRepository", FakeUserRepository)
-    monkeypatch.setattr(
-        "src.users.use_cases.hash_password", lambda value: f"hashed:{value}"
-    )
+    monkeypatch.setattr("src.users.use_cases.hash_password", lambda value: f"hashed:{value}")
     use_case = RegisterUserUseCase(lambda: uow)  # type: ignore[arg-type]
 
     result = await use_case.execute(
@@ -180,9 +176,7 @@ async def test_update_password_use_case_hashes_new_password_for_passwordless_use
 ) -> None:
     uow = FakeUnitOfWork()
     monkeypatch.setattr("src.users.use_cases.UserRepository", FakeUserRepository)
-    monkeypatch.setattr(
-        "src.users.use_cases.hash_password", lambda value: f"hashed:{value}"
-    )
+    monkeypatch.setattr("src.users.use_cases.hash_password", lambda value: f"hashed:{value}")
     use_case = UpdateUserPasswordUseCase(lambda: uow)  # type: ignore[arg-type]
 
     result = await use_case.execute(

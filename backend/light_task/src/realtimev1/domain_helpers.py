@@ -4,7 +4,6 @@ from datetime import datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from src.boards.models import BoardColumn, Task
 from src.boards.schemas import ColumnRead, TaskRead

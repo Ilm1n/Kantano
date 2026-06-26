@@ -9,15 +9,13 @@ from urllib.parse import urlparse
 import pytest
 import pytest_asyncio
 import redis.asyncio as redis
-from alembic import command
 from alembic.config import Config
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
+from alembic import command
 
-if sys.platform.startswith("win") and hasattr(
-    asyncio, "WindowsSelectorEventLoopPolicy"
-):
+if sys.platform.startswith("win") and hasattr(asyncio, "WindowsSelectorEventLoopPolicy"):
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 
@@ -59,13 +57,9 @@ def _setup_test_env() -> None:
     os.environ.setdefault("LIGHTTASK_CONFIG__S3__SECRET_KEY", "test")
     os.environ.setdefault("LIGHTTASK_CONFIG__S3__BUCKET_NAME", "test")
     os.environ.setdefault("LIGHTTASK_CONFIG__AUTH_JWT__SECURE", "False")
-    os.environ.setdefault(
-        "LIGHTTASK_CONFIG__FRONTEND__BASE_URL", "http://localhost:5173"
-    )
+    os.environ.setdefault("LIGHTTASK_CONFIG__FRONTEND__BASE_URL", "http://localhost:5173")
     os.environ.setdefault("LIGHTTASK_CONFIG__YANDEX__CLIENT_ID", "test-client-id")
-    os.environ.setdefault(
-        "LIGHTTASK_CONFIG__YANDEX__CLIENT_SECRET", "test-client-secret"
-    )
+    os.environ.setdefault("LIGHTTASK_CONFIG__YANDEX__CLIENT_SECRET", "test-client-secret")
     os.environ.setdefault(
         "LIGHTTASK_CONFIG__YANDEX__REDIRECT_URI",
         "http://testserver/api/auth/yandex/callback",
@@ -84,9 +78,7 @@ def _setup_test_env() -> None:
         os.getenv("LIGHTTASK_TEST_REDIS_URL", "redis://127.0.0.1:56379/15"),
     )
     os.environ.setdefault("LIGHTTASK_CONFIG__REALTIME__PRESENCE_TTL_SECONDS", "2")
-    os.environ.setdefault(
-        "LIGHTTASK_CONFIG__REALTIME__PRESENCE_SYNC_INTERVAL_SECONDS", "1"
-    )
+    os.environ.setdefault("LIGHTTASK_CONFIG__REALTIME__PRESENCE_SYNC_INTERVAL_SECONDS", "1")
 
     _validate_test_isolation()
 
@@ -184,9 +176,7 @@ async def clean_state(
         table_names = [row[0] for row in result.fetchall()]
         if table_names:
             quoted = ", ".join(f'"{name}"' for name in table_names)
-            await session.execute(
-                text(f"TRUNCATE TABLE {quoted} RESTART IDENTITY CASCADE")
-            )
+            await session.execute(text(f"TRUNCATE TABLE {quoted} RESTART IDENTITY CASCADE"))
             await session.commit()
 
     await redis_client.flushdb()
@@ -202,9 +192,7 @@ async def clean_state(
         table_names = [row[0] for row in result.fetchall()]
         if table_names:
             quoted = ", ".join(f'"{name}"' for name in table_names)
-            await session.execute(
-                text(f"TRUNCATE TABLE {quoted} RESTART IDENTITY CASCADE")
-            )
+            await session.execute(text(f"TRUNCATE TABLE {quoted} RESTART IDENTITY CASCADE"))
             await session.commit()
     await redis_client.flushdb()
     await redis_client.aclose()

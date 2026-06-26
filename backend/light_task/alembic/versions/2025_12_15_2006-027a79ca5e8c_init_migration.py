@@ -8,9 +8,10 @@ Create Date: 2025-12-15 20:06:07.479724
 
 from typing import Sequence, Union
 
-from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
+
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "027a79ca5e8c"
@@ -25,12 +26,8 @@ def upgrade() -> None:
     op.alter_column(
         "project_members",
         "role",
-        existing_type=postgresql.ENUM(
-            "OWNER", "MANAGER", "MEMBER", name="projectrole"
-        ),
-        type_=sa.Enum(
-            "OWNER", "MANAGER", "MEMBER", name="projectrole", native_enum=False
-        ),
+        existing_type=postgresql.ENUM("OWNER", "MANAGER", "MEMBER", name="projectrole"),
+        type_=sa.Enum("OWNER", "MANAGER", "MEMBER", name="projectrole", native_enum=False),
         existing_nullable=False,
     )
     op.drop_constraint(
@@ -44,9 +41,7 @@ def upgrade() -> None:
     op.alter_column(
         "tasks",
         "priority",
-        existing_type=postgresql.ENUM(
-            "LOW", "MEDIUM", "HIGH", "CRITICAL", name="taskpriority"
-        ),
+        existing_type=postgresql.ENUM("LOW", "MEDIUM", "HIGH", "CRITICAL", name="taskpriority"),
         type_=sa.Enum(
             "LOW",
             "MEDIUM",
@@ -74,14 +69,10 @@ def downgrade() -> None:
             name="taskpriority",
             native_enum=False,
         ),
-        type_=postgresql.ENUM(
-            "LOW", "MEDIUM", "HIGH", "CRITICAL", name="taskpriority"
-        ),
+        type_=postgresql.ENUM("LOW", "MEDIUM", "HIGH", "CRITICAL", name="taskpriority"),
         existing_nullable=False,
     )
-    op.drop_constraint(
-        "idx_unique_project_user", "project_members", type_="unique"
-    )
+    op.drop_constraint("idx_unique_project_user", "project_members", type_="unique")
     op.create_unique_constraint(
         op.f("uq_project_members_project_id"),
         "project_members",
@@ -91,12 +82,8 @@ def downgrade() -> None:
     op.alter_column(
         "project_members",
         "role",
-        existing_type=sa.Enum(
-            "OWNER", "MANAGER", "MEMBER", name="projectrole", native_enum=False
-        ),
-        type_=postgresql.ENUM(
-            "OWNER", "MANAGER", "MEMBER", name="projectrole"
-        ),
+        existing_type=sa.Enum("OWNER", "MANAGER", "MEMBER", name="projectrole", native_enum=False),
+        type_=postgresql.ENUM("OWNER", "MANAGER", "MEMBER", name="projectrole"),
         existing_nullable=False,
     )
     # ### end Alembic commands ###

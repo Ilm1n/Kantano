@@ -3,7 +3,6 @@ from __future__ import annotations
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
-
 from test_create_task_slice import (
     _add_member_via_invite,
     _auth_headers,

@@ -113,9 +113,7 @@ class TagsDomainEventDispatcher:
 
         async with self._session_factory() as session:
             repository = TagRepository(session)
-            project_updated_at = await repository.get_project_updated_at(
-                event.project_id
-            )
+            project_updated_at = await repository.get_project_updated_at(event.project_id)
             await self._event_publisher.publish_event(
                 event_type=RealtimeEventType.PROJECT_LIST_ITEM_UPDATED,
                 scope=RealtimeScope.USER,

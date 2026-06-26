@@ -21,8 +21,8 @@ from src.boards.dto import (
 from src.boards.events import (
     ColumnCreated,
     ColumnDeleted,
-    ColumnUpdated,
     ColumnsReordered,
+    ColumnUpdated,
     TaskCreated,
     TaskDeleted,
     TaskMoved,
@@ -61,9 +61,7 @@ class GetProjectBoardUseCase:
                     project_id=query.project_id,
                     user_id=query.actor_user_id,
                 )
-                self._permissions.ensure_project_member_can_read(
-                    actor_member=actor_member
-                )
+                self._permissions.ensure_project_member_can_read(actor_member=actor_member)
                 return await repository.list_project_columns(query.project_id)
         except AppError:
             raise
@@ -93,9 +91,7 @@ class ListProjectTasksUseCase:
                     project_id=query.project_id,
                     user_id=query.actor_user_id,
                 )
-                self._permissions.ensure_project_member_can_read(
-                    actor_member=actor_member
-                )
+                self._permissions.ensure_project_member_can_read(actor_member=actor_member)
                 return await repository.list_project_tasks(
                     project_id=query.project_id,
                     assignee_id=query.assignee_id,
@@ -169,9 +165,7 @@ class CreateColumnUseCase:
                 )
                 self._permissions.ensure_can_manage_columns(actor_member=actor_member)
 
-                max_position = await repository.get_max_column_position(
-                    command.project_id
-                )
+                max_position = await repository.get_max_column_position(command.project_id)
                 column = repository.add_column(
                     project_id=command.project_id,
                     name=command.name,
@@ -400,9 +394,7 @@ class CreateTaskUseCase:
                     raise BadRequestError(ErrorCode.COLUMN_BELONGS_ANOTHER_PROJECT)
 
                 if column.tasks_limit is not None:
-                    current_count = await repository.count_tasks_in_column(
-                        command.column_id
-                    )
+                    current_count = await repository.count_tasks_in_column(command.column_id)
                     if current_count >= column.tasks_limit:
                         raise ConflictError(ErrorCode.COLUMN_TASK_LIMIT_REACHED)
 
@@ -504,10 +496,7 @@ class MoveTaskUseCase:
                 from_column_id = task.column_id
                 if task.column_id != command.new_column_id:
                     target_column = await repository.get_column(command.new_column_id)
-                    if (
-                        target_column is None
-                        or target_column.project_id != task.project_id
-                    ):
+                    if target_column is None or target_column.project_id != task.project_id:
                         raise BadRequestError(ErrorCode.INVALID_TARGET_COLUMN)
 
                     if target_column.tasks_limit is not None:

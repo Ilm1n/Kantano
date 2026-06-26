@@ -4,19 +4,20 @@ from typing import TYPE_CHECKING
 from sqlalchemy import (
     CheckConstraint,
     DateTime,
-    Enum as SQLEnum,
     Float,
     ForeignKey,
+    Index,
     String,
     Text,
-    Index,
+)
+from sqlalchemy import (
+    Enum as SQLEnum,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.boards.constants import TaskPriority
 from src.db.base import Base
 from src.db.mixins import TimestampMixin
-
 from src.tags.models import Tag, task_tags
 
 if TYPE_CHECKING:
@@ -35,9 +36,7 @@ class BoardColumn(Base, TimestampMixin):
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     position: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     tasks_limit: Mapped[int | None] = mapped_column(nullable=True)
-    project_id: Mapped[int] = mapped_column(
-        ForeignKey("projects.id", ondelete="CASCADE")
-    )
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"))
 
     project: Mapped["Project"] = relationship("Project", back_populates="board_columns")
     tasks: Mapped[list["Task"]] = relationship(
@@ -75,24 +74,14 @@ class Task(Base, TimestampMixin):
         nullable=True,
     )
 
-    project_id: Mapped[int] = mapped_column(
-        ForeignKey("projects.id", ondelete="CASCADE")
-    )
-    column_id: Mapped[int] = mapped_column(
-        ForeignKey("board_columns.id", ondelete="CASCADE")
-    )
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"))
+    column_id: Mapped[int] = mapped_column(ForeignKey("board_columns.id", ondelete="CASCADE"))
 
-    assignee_id: Mapped[int | None] = mapped_column(
-        ForeignKey("users.id", ondelete="SET NULL")
-    )
-    author_id: Mapped[int | None] = mapped_column(
-        ForeignKey("users.id", ondelete="SET NULL")
-    )
+    assignee_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    author_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
 
     column: Mapped["BoardColumn"] = relationship(back_populates="tasks")
     assignee: Mapped["User"] = relationship("User", foreign_keys=[assignee_id])
     author: Mapped["User"] = relationship("User", foreign_keys=[author_id])
 
-    tags: Mapped[list["Tag"]] = relationship(
-        "Tag", secondary=task_tags, back_populates="tasks"
-    )
+    tags: Mapped[list["Tag"]] = relationship("Tag", secondary=task_tags, back_populates="tasks")

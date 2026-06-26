@@ -49,9 +49,7 @@ class FakeUnitOfWork:
 
 class FakeTagRepository:
     def __init__(self, session: object) -> None:
-        self.tag = SimpleNamespace(
-            id=10, project_id=100, name="Backend", color="#9CA3AF"
-        )
+        self.tag = SimpleNamespace(id=10, project_id=100, name="Backend", color="#9CA3AF")
         self.member = SimpleNamespace(role=ProjectRole.OWNER)
 
     async def get_project_member(self, *, project_id: int, user_id: int):

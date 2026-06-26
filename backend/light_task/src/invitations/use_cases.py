@@ -27,10 +27,10 @@ from src.logger import invitation_logger
 from src.projects.models import ProjectMember
 from src.shared.errors import (
     AppError,
+    DatabaseError,
     ForbiddenError,
     GoneError,
     NotFoundError,
-    DatabaseError,
 )
 
 
@@ -104,8 +104,7 @@ class CreateInvitationUseCase:
                     role=command.role,
                     email=command.email,
                     max_uses=command.max_uses,
-                    expires_at=datetime.now(timezone.utc)
-                    + timedelta(days=command.expires_in_days),
+                    expires_at=datetime.now(timezone.utc) + timedelta(days=command.expires_in_days),
                 )
                 repository.add_invitation(invitation)
                 await repository.touch_project(command.project_id)
@@ -189,28 +188,21 @@ class AcceptInvitationUseCase:
     ) -> None:
         self._uow_factory = uow_factory
 
-    async def execute(
-        self, command: AcceptInvitationCommand
-    ) -> InvitationAcceptResponse:
+    async def execute(self, command: AcceptInvitationCommand) -> InvitationAcceptResponse:
         try:
             async with self._uow_factory() as uow:
                 if uow.session is None:
                     raise RuntimeError("UnitOfWork has not been entered")
 
                 repository = InvitationRepository(uow.session)
-                invitation = await repository.get_invitation_by_token_for_update(
-                    command.token
-                )
+                invitation = await repository.get_invitation_by_token_for_update(command.token)
                 if invitation is None:
                     raise NotFoundError(ErrorCode.INVITATION_NOT_FOUND)
 
                 if invitation.expires_at < datetime.now(timezone.utc):
                     raise GoneError(ErrorCode.INVITATION_EXPIRED)
 
-                if (
-                    invitation.max_uses is not None
-                    and invitation.used_count >= invitation.max_uses
-                ):
+                if invitation.max_uses is not None and invitation.used_count >= invitation.max_uses:
                     raise GoneError(ErrorCode.INVITATION_USAGE_LIMIT_REACHED)
 
                 if invitation.email and invitation.email != command.user_email:

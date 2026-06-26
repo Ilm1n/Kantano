@@ -14,9 +14,7 @@ def _python_files() -> list[Path]:
 
 
 def test_legacy_service_files_are_removed() -> None:
-    service_files = sorted(
-        path.relative_to(SRC_DIR) for path in SRC_DIR.rglob("service.py")
-    )
+    service_files = sorted(path.relative_to(SRC_DIR) for path in SRC_DIR.rglob("service.py"))
 
     assert service_files == []
 

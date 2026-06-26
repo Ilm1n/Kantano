@@ -5,8 +5,8 @@ from dataclasses import dataclass, field
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.projects.repository import ProjectRepository
 from src.projects.constants import ProjectRole
+from src.projects.repository import ProjectRepository
 from src.realtimev1.domain_helpers import dump_project
 from src.realtimev1.events import RealtimeEventType, RealtimeScope
 from src.realtimev1.publisher import DomainEventPublisher
@@ -116,9 +116,7 @@ class ProjectsDomainEventDispatcher:
                 payload={"project": dump_project(project)},
                 client_mutation_id=event.client_mutation_id,
             )
-            affected_user_ids = await repository.get_project_member_user_ids(
-                event.project_id
-            )
+            affected_user_ids = await repository.get_project_member_user_ids(event.project_id)
             await self._publish_project_list_item_updated(
                 repository=repository,
                 project_id=event.project_id,
