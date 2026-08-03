@@ -35,7 +35,7 @@ Production topology:
 - `redis` (`Redis Pub/Sub` для realtime fanout + presence)
 
 Development topology:
-- `db + redis + backend` поднимаются через `docker-compose.dev.yml`
+- `db + redis + backend` и init-сервис локального storage поднимаются через `docker-compose.dev.yml`
 - frontend обычно запускается локально через `pnpm dev`
 
 ## 3. Структура репозитория
@@ -97,8 +97,25 @@ Frontend: `http://localhost:5173`
 
 По умолчанию в development аватары сохраняются локально:
 - `LIGHTTASK_CONFIG__S3__BACKEND=local`
-- файлы лежат в `backend/light_task/.local/avatar-storage`
+- файлы лежат в именованном Docker volume `local_storage_dev` (обычно `lighttask_dev_local_storage_dev`)
 - публичные URL отдаются backend'ом через `/local-storage/*`
+
+В dev volume автоматически подготавливается init-сервисом: создаётся каталог `avatar-storage`, а права назначаются контейнерному пользователю backend. Поэтому ручное создание каталогов или изменение прав на Windows, Linux и WSL не требуется.
+
+JWT-ключи для dev также автоматически копируются из `backend/light_task/certs/` в закрытый Docker volume. Приватный ключ доступен backend с правами `600`, поэтому менять права файлов вручную не нужно. Если ключи были заменены, пересоздай init и backend:
+
+```bash
+docker compose -f docker-compose.dev.yml up -d --force-recreate jwt-certs-init backend
+```
+
+Чтобы удалить только dev-аватары, сначала останови dev-контейнеры, затем удали volume:
+
+```bash
+docker compose -f docker-compose.dev.yml down
+docker volume rm lighttask_dev_local_storage_dev
+```
+
+Не используй `docker compose ... down -v`, если нужно сохранить dev-базу: эта команда удалит также `postgres_data_dev`.
 
 Если нужно проверить реальный S3-compatible storage локально:
 - `LIGHTTASK_CONFIG__S3__BACKEND=s3`
@@ -139,6 +156,7 @@ Backend завершает OAuth flow сам, ставит текущую `refre
 
 Важно:
 - часть параметров backend в проде зафиксирована прямо в `docker-compose.prod.yml` (`DB host/user/name`, `RUN host/port`, `CORS`, `INVITE base URL`)
+- production Compose копирует ключи из `./certs/` в закрытый Docker volume перед запуском backend; вручную менять права ключей внутри контейнера не нужно
 - если деплой через GitHub Actions, секреты задаются в `Repository Settings -> Secrets and variables -> Actions`
 
 ## 6. JWT ключи (`certs`)

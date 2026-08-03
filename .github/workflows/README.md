@@ -21,7 +21,7 @@
 1. Собирает backend/frontend Docker images и публикует в GHCR.
 2. Формирует `.env.prod` и `certs/*.pem` из secrets.
 3. Копирует `docker-compose.prod.yml`, `Caddyfile`, `.env.prod`, `certs/` на VPS.
-4. На VPS выполняет `docker compose pull` + `up -d --force-recreate --remove-orphans --wait`.
+4. На VPS выполняет `docker compose pull` + `up -d --force-recreate --remove-orphans --wait`; production Compose сам подготавливает закрытый volume для JWT-ключей перед запуском backend.
 5. Удаляет старые версии контейнерных образов в registry.
 
 ## Как поменять пароль Swagger (Caddy basic auth)

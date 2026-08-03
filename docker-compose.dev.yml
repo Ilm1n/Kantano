@@ -29,6 +29,39 @@ services:
       timeout: 5s
       retries: 5
 
+  local-storage-init:
+    image: alpine:3.21
+    user: "0:0"
+    volumes:
+      - local_storage_dev:/storage
+    command:
+      - sh
+      - -ec
+      - |
+        mkdir -p /storage/avatar-storage
+        chown -R 10001:10001 /storage
+        chmod -R u+rwX,go-rwx /storage
+    restart: "no"
+
+  jwt-certs-init:
+    image: alpine:3.21
+    user: "0:0"
+    volumes:
+      - ./backend/light_task/certs:/source:ro
+      - jwt_certs_dev:/certs
+    command:
+      - sh
+      - -ec
+      - |
+        test -f /source/jwt-private.pem
+        test -f /source/jwt-public.pem
+        cp /source/jwt-private.pem /certs/jwt-private.pem
+        cp /source/jwt-public.pem /certs/jwt-public.pem
+        chown 10001:10001 /certs/jwt-private.pem /certs/jwt-public.pem
+        chmod 600 /certs/jwt-private.pem
+        chmod 644 /certs/jwt-public.pem
+    restart: "no"
+
   backend:
     build:
       context: ./backend/light_task
@@ -37,8 +70,8 @@ services:
     volumes:
       - ./backend/light_task/src:/app/src
       - ./backend/light_task/alembic:/app/alembic
-      - ./backend/light_task/certs:/app/certs
-      - ./backend/light_task/.local:/app/.local
+      - jwt_certs_dev:/app/certs:ro
+      - local_storage_dev:/app/.local
     ports:
       - "${LIGHTTASK_CONFIG__RUN__PORT:-8000}:${LIGHTTASK_CONFIG__RUN__PORT:-8000}"
     env_file:
@@ -47,6 +80,10 @@ services:
       - LIGHTTASK_CONFIG__DB__HOST=db
       - LIGHTTASK_CONFIG__REALTIME__REDIS_URL=redis://redis:6379/0
     depends_on:
+      local-storage-init:
+        condition: service_completed_successfully
+      jwt-certs-init:
+        condition: service_completed_successfully
       db:
         condition: service_healthy
       redis:
@@ -54,3 +91,5 @@ services:
 
 volumes:
   postgres_data_dev:
+  local_storage_dev:
+  jwt_certs_dev:

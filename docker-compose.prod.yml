@@ -75,12 +75,31 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  jwt-certs-init:
+    image: alpine:3.21
+    user: "0:0"
+    volumes:
+      - ./certs:/source:ro
+      - jwt_certs_prod:/certs
+    command:
+      - sh
+      - -ec
+      - |
+        test -f /source/jwt-private.pem
+        test -f /source/jwt-public.pem
+        cp /source/jwt-private.pem /certs/jwt-private.pem
+        cp /source/jwt-public.pem /certs/jwt-public.pem
+        chown 10001:10001 /certs/jwt-private.pem /certs/jwt-public.pem
+        chmod 600 /certs/jwt-private.pem
+        chmod 644 /certs/jwt-public.pem
+    restart: "no"
+
   backend:
     image: ghcr.io/${IMAGE_REPO_OWNER}/lighttask-backend:${IMAGE_TAG:-main}
     restart: unless-stopped
     env_file: .env
     volumes:
-      - ./certs:/app/certs:ro
+      - jwt_certs_prod:/app/certs:ro
     environment:
       - LIGHTTASK_CONFIG__DB__HOST=db
       - LIGHTTASK_CONFIG__DB__PORT=5432
@@ -94,6 +113,8 @@ services:
       - LIGHTTASK_CONFIG__INVITE__BASE_URL=https://kantano.ru/invite
       - LIGHTTASK_CONFIG__REALTIME__REDIS_URL=redis://redis:6379/0
     depends_on:
+      jwt-certs-init:
+        condition: service_completed_successfully
       db:
         condition: service_healthy
       redis:
@@ -125,3 +146,4 @@ volumes:
   postgres_data_prod:
   caddy_data:
   caddy_config:
+  jwt_certs_prod:

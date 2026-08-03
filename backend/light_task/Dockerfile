@@ -20,7 +20,8 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends netcat-openbsd curl && \
     rm -rf /var/lib/apt/lists/*
 
-RUN useradd -m -d /app appuser
+RUN groupadd --gid 10001 appuser && \
+    useradd --uid 10001 --gid 10001 --create-home --home-dir /app appuser
 
 WORKDIR /app
 
