@@ -1,7 +1,7 @@
 [project]
 name = "backend"
 version = "0.1.0"
-description = "Add your description here"
+description = "FastAPI backend for the Kantano task manager"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -30,7 +30,6 @@ dev = [
     "pytest-asyncio>=1.2.0",
     "pytest-cov>=7.0.0",
     "ruff>=0.15.20",
-    "schemathesis>=4.7.5",
 ]
 
 
@@ -74,5 +73,5 @@ known-first-party = ["src"]
 combine-as-imports = true
 
 [tool.basedpyright]
-include = ["src"]               
-typeCheckingMode = "basic"  
+include = ["src"]
+typeCheckingMode = "basic"

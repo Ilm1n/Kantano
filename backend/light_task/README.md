@@ -1,124 +1,76 @@
-# Backend (`backend/light_task`)
+# Kantano Backend
 
-FastAPI backend для Kantano.
+FastAPI-приложение с REST API и WebSocket realtime для Kantano.
 
-## Содержание
-- [1. Состав модуля](#1-состав-модуля)
-- [2. Требования](#2-требования)
-- [3. Конфигурация](#3-конфигурация)
-- [4. Запуск в development](#4-запуск-в-development)
-- [5. Запуск без Docker (опционально)](#5-запуск-без-docker-опционально)
-- [6. Миграции (Alembic)](#6-миграции-alembic)
-- [7. API-проверки (Schemathesis)](#7-api-проверки-schemathesis)
-- [8. JWT ключи](#8-jwt-ключи)
+## Структура
 
-## 1. Состав модуля
-- точка входа: `src/main.py`
-- домены: `auth`, `users`, `projects`, `boards`, `tags`, `invitations`
-- миграции: `alembic/`
-- контейнеризация: `Dockerfile`, `entrypoint.sh`
+```text
+src/
+├── auth/          # login, refresh и Yandex OAuth
+├── users/         # регистрация, профиль и аватары
+├── projects/      # проекты, участники и роли
+├── boards/        # колонки, задачи и ordering
+├── tags/          # теги проекта
+├── invitations/   # ссылки-приглашения
+├── realtimev1/    # WebSocket, Redis Pub/Sub и presence
+├── db/            # SQLAlchemy и UnitOfWork
+└── shared/        # domain events и общие ошибки
+```
 
-## 2. Требования
-- Python `>=3.12`
-- PostgreSQL 15 (или через Docker Compose из корня проекта)
-- Redis 7 (для realtime event bus и presence)
-- RSA key pair для JWT (см. [src/auth/README.md](./src/auth/README.md))
-- локальное файловое хранилище для аватаров или доступ к S3-compatible bucket
+Изменение данных проходит по цепочке `router → schema/DTO → use case →
+permissions/repository → UnitOfWork → domain events`. Только `UnitOfWork` завершает
+транзакцию; realtime публикуется после commit.
 
-## 3. Конфигурация
-Backend читает переменные `LIGHTTASK_CONFIG__*` (см. корневой `.env.template`).
+Подробнее: [архитектура](../../docs/architecture.md).
 
-Минимально обязательные:
-- `LIGHTTASK_CONFIG__DB__USER`
-- `LIGHTTASK_CONFIG__DB__PASSWORD`
-- `LIGHTTASK_CONFIG__DB__NAME`
+## Разработка
 
-В development S3 не обязателен. По умолчанию используется:
-- `LIGHTTASK_CONFIG__S3__BACKEND=local`
-- `LIGHTTASK_CONFIG__S3__LOCAL_PUBLIC_URL=http://localhost:8000/local-storage`
+Основной development-режим запускается из корня репозитория:
 
-Файлы сохраняются в `backend/light_task/.local/avatar-storage`.
-
-Для реального S3-compatible storage укажи:
-- `LIGHTTASK_CONFIG__S3__BACKEND=s3`
-- `LIGHTTASK_CONFIG__S3__ACCESS_KEY`
-- `LIGHTTASK_CONFIG__S3__SECRET_KEY`
-- `LIGHTTASK_CONFIG__S3__BUCKET_NAME`
-
-Важно для localhost:
-- `LIGHTTASK_CONFIG__AUTH_JWT__SECURE=False` (иначе refresh-cookie по HTTP не будет работать корректно)
-
-Yandex OAuth / Yandex ID:
-- `LIGHTTASK_CONFIG__YANDEX__CLIENT_ID`
-- `LIGHTTASK_CONFIG__YANDEX__CLIENT_SECRET`
-- `LIGHTTASK_CONFIG__YANDEX__REDIRECT_URI`
-- `LIGHTTASK_CONFIG__FRONTEND__BASE_URL`
-
-Backend завершает OAuth callback на `/api/auth/yandex/callback`, создаёт или линкует локального пользователя по email, ставит обычную refresh-cookie и возвращает SPA на `/auth/yandex/callback`.
-
-## 4. Запуск в development
-Из корня проекта:
 ```bash
-cp .env.template .env
-# сгенерируй JWT ключи (см. src/auth/README.md)
 docker compose -f docker-compose.dev.yml up --build
 ```
-[src/auth/README.md](./src/auth/README.md)
 
-Доступные endpoint'ы:
-- API: `http://127.0.0.1:8000/api/*`
-- Health: `http://127.0.0.1:8000/api/health`
-- Docs: `http://127.0.0.1:8000/docs`
+Для запуска backend непосредственно на хосте:
 
-## 5. Запуск без Docker (опционально)
-Из `backend/light_task`:
 ```bash
-uv sync
+cd backend/light_task
+uv sync --group dev
 uv run alembic upgrade head
-# убедись, что Redis запущен и доступен по LIGHTTASK_CONFIG__REALTIME__REDIS_URL
 uv run uvicorn src.main:main_app --host 127.0.0.1 --port 8000 --reload
 ```
 
-## 6. Миграции (Alembic)
-Из `backend/light_task`:
+Backend использует Python 3.12. Конфигурация загружается из корневого `.env` и
+переменных `LIGHTTASK_CONFIG__*`. PostgreSQL, Redis и JWT-ключи обязательны; Yandex OAuth
+и S3 в development можно не настраивать.
+
+Полная настройка окружения: [локальная разработка](../../docs/development.md).
+
+## Проверки
+
 ```bash
-# применить все миграции
-uv run alembic upgrade head
-
-# создать новую миграцию
-uv run alembic revision --autogenerate -m "your message"
-
-# откат на 1 шаг
-uv run alembic downgrade -1
+uv run ruff check .
+uv run ruff format --check .
+uv run basedpyright
+uv run pytest -q tests/unit
 ```
 
-## 7. API-проверки (Schemathesis)
-Примеры:
+Полный pytest-набор использует отдельные PostgreSQL и Redis из
+`../../docker-compose.test.yml`. Команды и правила изоляции описаны в
+[руководстве по тестированию](../../docs/testing.md).
+
+## API и миграции
+
+При запущенном backend доступны Swagger UI на `http://localhost:8000/docs` и OpenAPI на
+`http://localhost:8000/openapi.json`.
+
+Frontend-контракт нужно обновлять после изменений API:
+
 ```bash
-st run http://127.0.0.1:8000/openapi.json --checks all --max-examples 50
-st run http://127.0.0.1:8000/openapi.json --checks all --header "Authorization: Bearer YOUR_TOKEN_HERE"
+uv run python scripts/export_openapi.py
+cd ../../frontend/light-task-frontend
+pnpm gen:api
 ```
 
-## 8. JWT ключи
-Подробная инструкция: [src/auth/README.md](./src/auth/README.md)
-
-## 9. Realtime integration tests
-Из `backend/light_task`:
-```bash
-docker compose -f ../../docker-compose.test.yml up -d
-
-LIGHTTASK_TEST_DB_HOST=127.0.0.1 \
-LIGHTTASK_TEST_DB_PORT=55432 \
-LIGHTTASK_TEST_DB_USER=postgres \
-LIGHTTASK_TEST_DB_PASSWORD=postgres \
-LIGHTTASK_TEST_DB_NAME=lighttask_test \
-LIGHTTASK_TEST_REDIS_URL=redis://127.0.0.1:56379/15 \
-uv run pytest -q tests/test_realtime_integration.py
-
-docker compose -f ../../docker-compose.test.yml down -v
-```
-
-Важно:
-- тесты требуют реальный PostgreSQL (test DB) и реальный Redis;
-- использовать отдельные test сервисы (не `docker-compose.dev.yml`);
-- тесты имеют safety-check и откажутся стартовать с non-test DB и Redis DB 0.
+Миграции находятся в `alembic/versions` и применяются командой
+`uv run alembic upgrade head`. Backend Docker entrypoint выполняет её автоматически.

@@ -7,14 +7,12 @@ on:
       - "backend/light_task/**"
       - ".github/workflows/backend-tests.yml"
       - "docker-compose.test.yml"
-      - "docs/realtime-implementation/**"
   pull_request:
     branches: ["main"]
     paths:
       - "backend/light_task/**"
       - ".github/workflows/backend-tests.yml"
       - "docker-compose.test.yml"
-      - "docs/realtime-implementation/**"
   workflow_dispatch:
 
 concurrency:
