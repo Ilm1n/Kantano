@@ -73,10 +73,8 @@ cp .env.template .env
 
 mkdir -p backend/light_task/certs
 openssl genrsa -out backend/light_task/certs/jwt-private.pem 2048
-openssl rsa \
-  -in backend/light_task/certs/jwt-private.pem \
-  -pubout \
-  -out backend/light_task/certs/jwt-public.pem
+
+openssl rsa -in backend/light_task/certs/jwt-private.pem -pubout -out backend/light_task/certs/jwt-public.pem
 
 docker compose -f docker-compose.dev.yml up --build
 ```
