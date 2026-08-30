@@ -24,6 +24,7 @@ from src.registration.rate_limiter import RegistrationRateLimiter
 from src.registration.repository import RegistrationRepository
 from src.shared.errors import (
     AppError,
+    ConflictError,
     DatabaseError,
     ServiceUnavailableError,
     TooManyRequestsError,
@@ -64,21 +65,21 @@ class StartRegistrationUseCase:
                     is not None
                 ):
                     registration_logger.info("Registration request matched an existing user")
-                    return
+                    raise ConflictError(ErrorCode.USERNAME_OR_EMAIL_EXISTS)
 
                 pending = await repository.get_pending_by_email_for_update(command.email)
                 if pending is not None:
                     registration_logger.info(
                         "Registration request matched an existing pending email"
                     )
-                    return
+                    raise ConflictError(ErrorCode.USERNAME_OR_EMAIL_EXISTS)
 
                 username_pending = await repository.get_pending_by_username(command.username)
                 if username_pending is not None:
                     registration_logger.info(
                         "Registration request matched an existing pending username"
                     )
-                    return
+                    raise ConflictError(ErrorCode.USERNAME_OR_EMAIL_EXISTS)
 
                 token = secrets.token_urlsafe(32)
                 pending = PendingRegistration(
@@ -95,7 +96,8 @@ class StartRegistrationUseCase:
                     "Created verification request pending_registration_id=%s", pending.id
                 )
         except IntegrityError:
-            registration_logger.info("Registration collision was handled without disclosure")
+            registration_logger.info("Registration collision detected")
+            raise ConflictError(ErrorCode.USERNAME_OR_EMAIL_EXISTS) from None
         except AppError:
             raise
         except Exception as exc:

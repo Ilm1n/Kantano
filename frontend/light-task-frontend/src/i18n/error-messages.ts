@@ -9,7 +9,7 @@ export const RU_ERROR_MESSAGES: Record<string, string> = {
 
   USER_NOT_FOUND: 'Пользователь не найден',
   INACTIVE_USER: 'Пользователь не активен',
-  USERNAME_OR_EMAIL_EXISTS: 'Пользователь с таким именем или почтой уже существует',
+  USERNAME_OR_EMAIL_EXISTS: 'Email или имя пользователя уже используются',
   USERNAME_TAKEN: 'Имя пользователя уже занято',
   PASSWORD_LOGIN_UNAVAILABLE: 'У этого аккаунта ещё нет пароля. Войдите через Yandex и задайте пароль в профиле.',
   CURRENT_PASSWORD_REQUIRED: 'Введите текущий пароль',

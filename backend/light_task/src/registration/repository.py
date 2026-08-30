@@ -22,7 +22,7 @@ class RegistrationRepository:
         result = await self._session.execute(
             select(User).where(or_(User.email == email, User.username == username))
         )
-        return result.scalar_one_or_none()
+        return result.scalars().first()
 
     async def get_pending_by_email_for_update(self, email: str) -> PendingRegistration | None:
         result = await self._session.execute(

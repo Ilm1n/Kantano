@@ -31,6 +31,12 @@ async def _user_for_email(email: str) -> User | None:
         return await session.scalar(select(User).where(User.email == email))
 
 
+async def _create_users(*users: User) -> None:
+    async with db_helper.async_session_maker() as session:
+        session.add_all(users)
+        await session.commit()
+
+
 def test_registration_creates_pending_and_outbox_but_not_user(client: TestClient) -> None:
     email = "pending@example.com"
     response = client.post(
@@ -47,6 +53,27 @@ def test_registration_creates_pending_and_outbox_but_not_user(client: TestClient
     events = asyncio.run(_outbox_events())
     assert len(events) == 1
     assert events[0].event_type == "verification_email_requested"
+
+
+def test_registration_handles_email_and_username_matching_different_users(
+    client: TestClient,
+) -> None:
+    asyncio.run(
+        _create_users(
+            User(username="email_owner", email="occupied@example.com"),
+            User(username="occupied_name", email="username-owner@example.com"),
+        )
+    )
+
+    response = client.post(
+        "/api/registration",
+        json={"username": "occupied_name", "email": "occupied@example.com"},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "USERNAME_OR_EMAIL_EXISTS"
+    assert asyncio.run(_pending_for_email("occupied@example.com")) is None
+    assert asyncio.run(_outbox_events()) == []
 
 
 def test_confirmation_creates_verified_user_and_token_is_single_use(client: TestClient) -> None:
@@ -141,7 +168,8 @@ def test_repeated_registration_cannot_replace_pending_identity_or_token(client: 
         json={"username": "attacker_user", "email": email},
     )
 
-    assert repeated.status_code == 202
+    assert repeated.status_code == 409
+    assert repeated.json()["error"]["code"] == "USERNAME_OR_EMAIL_EXISTS"
     pending = asyncio.run(_pending_for_email(email))
     assert pending is not None
     assert pending.username == "original_user"

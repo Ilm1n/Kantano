@@ -78,7 +78,7 @@ def test_confirmed_user_read_response_shape(client: TestClient) -> None:
     assert payload["avatarUrl"] is None
 
 
-def test_duplicate_registration_is_neutral(
+def test_duplicate_registration_returns_conflict(
     client: TestClient,
 ) -> None:
     suffix = uuid4().hex[:8]
@@ -90,8 +90,8 @@ def test_duplicate_registration_is_neutral(
         json={"username": username, "email": email},
     )
 
-    assert duplicate_response.status_code == 202
-    assert duplicate_response.json() == {"detail": "CHECK_YOUR_EMAIL"}
+    assert duplicate_response.status_code == 409
+    assert duplicate_response.json()["error"]["code"] == "USERNAME_OR_EMAIL_EXISTS"
 
 
 def test_update_me_and_public_read_response_shape(client: TestClient) -> None:
