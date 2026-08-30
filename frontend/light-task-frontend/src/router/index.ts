@@ -8,6 +8,8 @@ const AppLayout = () => import('@/layouts/components/AppLayout.vue');
 const LoginPage = () => import('@/modules/auth/components/LoginPage.vue');
 const RegisterPage = () => import('@/modules/auth/components/RegisterPage.vue');
 const YandexCallbackPage = () => import('@/modules/auth/components/YandexCallbackPage.vue');
+const VerifyEmailPage = () => import('@/modules/auth/components/VerifyEmailPage.vue');
+const CheckEmailPage = () => import('@/modules/auth/components/CheckEmailPage.vue');
 const ProjectsList = () => import('@/modules/projects/components/ProjectsList.vue');
 const BoardPage = () => import('@/modules/board/pages/BoardPage.vue');
 const ProfilePage = () => import('@/modules/profile/pages/ProfilePage.vue');
@@ -37,6 +39,8 @@ const router = createRouter({
       component: RegisterPage,
       meta: {requiresAuth: false}
     },
+    { path: '/register/check-email', component: CheckEmailPage, meta: { requiresAuth: false } },
+    { path: '/verify-email', component: VerifyEmailPage, meta: { requiresAuth: false } },
     {
       path: '/auth/yandex/callback',
       name: 'yandex-callback',

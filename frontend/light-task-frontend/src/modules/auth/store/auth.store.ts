@@ -2,7 +2,13 @@
 import {defineStore} from 'pinia';
 import {computed, ref} from 'vue';
 import {apiClient} from '@/api/config';
-import type {Body_login_for_access_token_api_auth_login_post, UserCreate, UserPasswordUpdate, UserRead, UserUpdate,} from '@/api/client';
+import type {
+  Body_login_for_access_token_api_auth_login_post,
+  RegistrationRequest,
+  UserPasswordUpdate,
+  UserRead,
+  UserUpdate,
+} from '@/api/client';
 import {useRouter} from 'vue-router';
 import {
   accessTokenState,
@@ -95,15 +101,27 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  async function register(payload: UserCreate) {
+  async function register(payload: RegistrationRequest) {
     isLoading.value = true;
     try {
-      // Проверь имя метода после генерации
-      await apiClient.users.createUserApiUsersRegisterPost(payload);
+      await apiClient.registration.registerApiRegistrationPost(payload);
+      sessionStorage.setItem('registrationEmail', payload.email);
+      sessionStorage.setItem('registrationResendAllowedAt', String(Date.now() + 60_000));
       return true;
     } catch (error) {
       console.error('Registration failed:', error);
       throw error;
+    } finally {
+      isLoading.value = false;
+    }
+  }
+
+  async function resendVerification(email: string) {
+    isLoading.value = true;
+    try {
+      await apiClient.registration.resendVerificationApiRegistrationResendPost({ email });
+      sessionStorage.setItem('registrationEmail', email);
+      sessionStorage.setItem('registrationResendAllowedAt', String(Date.now() + 60_000));
     } finally {
       isLoading.value = false;
     }
@@ -193,6 +211,7 @@ export const useAuthStore = defineStore('auth', () => {
     isAuthenticated,
     login,
     register,
+    resendVerification,
     logout,
     fetchUser,
     initAuth,

@@ -12,7 +12,6 @@ import * as z from 'zod';
 import {useTheme} from '@/composables/useTheme';
 
 import InputText from 'primevue/inputtext';
-import Password from 'primevue/password';
 import Button from 'primevue/button';
 import {getErrorMessage} from "@/utils/error.ts";
 import yandexLogo from '@/assets/images/brand/yandex.svg';
@@ -31,12 +30,6 @@ const validationSchema = toTypedSchema(
           .max(50, 'Максимум 50 символов'),
       email: z.string({required_error: 'Обязательное поле'})
           .email('Введите корректный email'),
-      password: z.string({required_error: 'Обязательное поле'})
-          .min(8, 'Минимум 8 символов'),
-      confirmPassword: z.string({required_error: 'Повторите пароль'})
-    }).refine((data) => data.password === data.confirmPassword, {
-      message: "Пароли не совпадают",
-      path: ["confirmPassword"],
     })
 );
 
@@ -44,33 +37,28 @@ const { defineField, handleSubmit, errors, isSubmitting } = useForm({
   validationSchema,
   initialValues: {
     email: (route.query.email as string) || '',
-    username: '',
-    password: '',
-    confirmPassword: ''
+    username: ''
   }
 });
 
 const [username, usernameAttrs] = defineField('username');
 const [email, emailAttrs] = defineField('email');
-const [password, passwordAttrs] = defineField('password');
-const [confirmPassword, confirmPasswordAttrs] = defineField('confirmPassword');
 
 const onSubmit = handleSubmit(async (values) => {
   try {
     await authStore.register({
       username: values.username,
       email: values.email,
-      password: values.password,
     });
 
     toast.add({
       severity: 'success',
-      summary: 'Аккаунт создан!',
-      detail: 'Теперь войдите, используя свои данные',
+      summary: 'Проверьте почту',
+      detail: 'Мы отправили ссылку для подтверждения email',
       life: 5000
     });
 
-    await router.push('/login');
+    await router.push('/register/check-email');
 
   } catch (error: any) {
     const errorMsg = getErrorMessage(error);
@@ -164,48 +152,6 @@ useHead({
           </div>
         </div>
 
-        <!-- Password -->
-        <div>
-          <label for="reg-password" class="block text-base font-medium text-slate-700 dark:text-gray-200 mb-2">Пароль</label>
-          <Password
-              inputId="reg-password"
-              v-model="password"
-              v-bind="passwordAttrs"
-              :invalid="!!errors.password"
-              :feedback="false"
-              toggleMask
-              placeholder="••••••••"
-              class="w-full"
-              inputClass="w-full !p-3"
-              promptLabel="Введите пароль"
-              weakLabel="Слабый"
-              mediumLabel="Средний"
-              strongLabel="Надежный"
-          />
-          <div class="min-h-[1.5rem] mt-1">
-            <small class="text-red-500" v-if="errors.password">{{ errors.password }}</small>
-          </div>
-        </div>
-
-        <!-- Confirm Password -->
-        <div>
-          <label for="reg-confirm" class="block text-base font-medium text-slate-700 dark:text-gray-200 mb-2">Повторите пароль</label>
-          <Password
-              inputId="reg-confirm"
-              v-model="confirmPassword"
-              v-bind="confirmPasswordAttrs"
-              :invalid="!!errors.confirmPassword"
-              :feedback="false"
-              toggleMask
-              placeholder="••••••••"
-              class="w-full"
-              inputClass="w-full !p-3"
-          />
-          <div class="min-h-[1.5rem] mt-1">
-            <small class="text-red-500" v-if="errors.confirmPassword">{{ errors.confirmPassword }}</small>
-          </div>
-        </div>
-
         <Button
             type="submit"
             label="Создать аккаунт"
@@ -245,9 +191,3 @@ useHead({
     </div>
   </div>
 </template>
-
-<style scoped>
-:deep(.p-password .p-icon) {
-  @apply text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300;
-}
-</style>

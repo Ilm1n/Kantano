@@ -2,9 +2,6 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-export type UserCreate = {
-    username: string;
+export type ResendVerificationRequest = {
     email: string;
-    password: string;
 };
-

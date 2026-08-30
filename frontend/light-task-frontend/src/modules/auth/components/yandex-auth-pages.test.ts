@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import LoginPage from './LoginPage.vue';
 import RegisterPage from './RegisterPage.vue';
+import VerifyEmailPage from './VerifyEmailPage.vue';
 import YandexCallbackPage from './YandexCallbackPage.vue';
 
 const mocks = vi.hoisted(() => ({
@@ -11,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   routerReplace: vi.fn(),
   routeQuery: {} as Record<string, unknown>,
   toastAdd: vi.fn(),
+  validateToken: vi.fn(),
 }));
 
 vi.mock('@/modules/auth/store/auth.store', () => ({
@@ -35,6 +37,14 @@ vi.mock('primevue/usetoast', () => ({
 
 vi.mock('@unhead/vue', () => ({
   useHead: vi.fn(),
+}));
+
+vi.mock('@/api/config', () => ({
+  apiClient: {
+    registration: {
+      validateTokenApiRegistrationValidatePost: mocks.validateToken,
+    },
+  },
 }));
 
 vi.mock('@/composables/useTheme', () => ({
@@ -107,5 +117,29 @@ describe('Yandex auth pages', () => {
 
     expect(mocks.toastAdd).toHaveBeenCalled();
     expect(mocks.routerReplace).toHaveBeenCalledWith('/login');
+  });
+
+  it('shows the password form only after a valid verification token', async () => {
+    mocks.routeQuery = { token: 'valid-token' };
+    mocks.validateToken.mockResolvedValue(undefined);
+
+    const wrapper = mount(VerifyEmailPage, globalOptions);
+    await flushPromises();
+
+    expect(mocks.validateToken).toHaveBeenCalledWith({ token: 'valid-token' });
+    expect(mocks.routerReplace).toHaveBeenCalledWith({ query: {} });
+    expect(wrapper.text()).toContain('Почта подтверждена');
+    expect(wrapper.text()).toContain('Создать аккаунт');
+  });
+
+  it('shows an invalid-link state immediately for a used verification token', async () => {
+    mocks.routeQuery = { token: 'used-token' };
+    mocks.validateToken.mockRejectedValue(new Error('Invalid token'));
+
+    const wrapper = mount(VerifyEmailPage, globalOptions);
+    await flushPromises();
+
+    expect(wrapper.text()).toContain('Ссылка недействительна');
+    expect(wrapper.text()).not.toContain('Создать аккаунт');
   });
 });
