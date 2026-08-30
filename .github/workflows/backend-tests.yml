@@ -45,6 +45,19 @@ jobs:
           --health-interval 5s
           --health-timeout 3s
           --health-retries 20
+      rabbitmq:
+        image: rabbitmq:4-alpine
+        env:
+          RABBITMQ_DEFAULT_USER: lighttask
+          RABBITMQ_DEFAULT_PASS: lighttask-test
+          RABBITMQ_DEFAULT_VHOST: kantano
+        ports:
+          - 5672:5672
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
 
     defaults:
       run:
@@ -63,6 +76,11 @@ jobs:
       LIGHTTASK_CONFIG__REALTIME__REDIS_URL: redis://127.0.0.1:6379/15
       LIGHTTASK_CONFIG__REALTIME__PRESENCE_TTL_SECONDS: "2"
       LIGHTTASK_CONFIG__REALTIME__PRESENCE_SYNC_INTERVAL_SECONDS: "1"
+      LIGHTTASK_CONFIG__QUEUE__HOST: 127.0.0.1
+      LIGHTTASK_CONFIG__QUEUE__PORT: "5672"
+      LIGHTTASK_CONFIG__QUEUE__USER: lighttask
+      LIGHTTASK_CONFIG__QUEUE__PASSWORD: lighttask-test
+      LIGHTTASK_CONFIG__QUEUE__VIRTUAL_HOST: kantano
 
     steps:
       - name: Checkout

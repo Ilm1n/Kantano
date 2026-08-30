@@ -75,6 +75,29 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  rabbitmq:
+    image: rabbitmq:4-alpine
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${LIGHTTASK_CONFIG__QUEUE__USER}
+      RABBITMQ_DEFAULT_PASS: ${LIGHTTASK_CONFIG__QUEUE__PASSWORD}
+      RABBITMQ_DEFAULT_VHOST: ${LIGHTTASK_CONFIG__QUEUE__VIRTUAL_HOST:-kantano}
+    volumes:
+      - ./rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+      - rabbitmq_data_prod:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - backend-db
+    deploy:
+      resources:
+        limits:
+          cpus: '0.2'
+          memory: 256M
+
   jwt-certs-init:
     image: alpine:3.21
     user: "0:0"
@@ -112,6 +135,8 @@ services:
       - LIGHTTASK_CONFIG__RUN__CORS_ORIGINS=[]
       - LIGHTTASK_CONFIG__INVITE__BASE_URL=https://kantano.ru/invite
       - LIGHTTASK_CONFIG__REALTIME__REDIS_URL=redis://redis:6379/0
+      - LIGHTTASK_CONFIG__QUEUE__HOST=rabbitmq
+      - LIGHTTASK_SKIP_MIGRATIONS=1
     depends_on:
       jwt-certs-init:
         condition: service_completed_successfully
@@ -119,6 +144,10 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      migrations:
+        condition: service_completed_successfully
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:8000/api/health" ]
       interval: 30s
@@ -138,6 +167,80 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  migrations:
+    image: ghcr.io/${IMAGE_REPO_OWNER}/lighttask-backend:${IMAGE_TAG:-main}
+    command: ["true"]
+    env_file: .env
+    volumes:
+      - jwt_certs_prod:/app/certs:ro
+    environment:
+      - LIGHTTASK_CONFIG__DB__HOST=db
+      - LIGHTTASK_CONFIG__DB__PORT=5432
+      - LIGHTTASK_CONFIG__DB__USER=lighttask_user
+      - LIGHTTASK_CONFIG__DB__NAME=lighttask
+      - LIGHTTASK_CONFIG__S3__BACKEND=s3
+    depends_on:
+      jwt-certs-init:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
+    networks:
+      - backend-db
+
+  celery-worker:
+    image: ghcr.io/${IMAGE_REPO_OWNER}/lighttask-backend:${IMAGE_TAG:-main}
+    restart: unless-stopped
+    command: celery -A src.registration.celery_app worker --pool=solo --without-mingle --without-gossip --without-heartbeat --loglevel=INFO
+    env_file: .env
+    environment:
+      - LIGHTTASK_CONFIG__DB__HOST=db
+      - LIGHTTASK_CONFIG__DB__PORT=5432
+      - LIGHTTASK_CONFIG__DB__USER=lighttask_user
+      - LIGHTTASK_CONFIG__DB__NAME=lighttask
+      - LIGHTTASK_CONFIG__QUEUE__HOST=rabbitmq
+      - LIGHTTASK_SKIP_MIGRATIONS=1
+    depends_on:
+      db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      migrations:
+        condition: service_completed_successfully
+    networks:
+      - backend-db
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  outbox-publisher:
+    image: ghcr.io/${IMAGE_REPO_OWNER}/lighttask-backend:${IMAGE_TAG:-main}
+    restart: unless-stopped
+    command: python -m src.registration.outbox_publisher
+    env_file: .env
+    environment:
+      - LIGHTTASK_CONFIG__DB__HOST=db
+      - LIGHTTASK_CONFIG__DB__PORT=5432
+      - LIGHTTASK_CONFIG__DB__USER=lighttask_user
+      - LIGHTTASK_CONFIG__DB__NAME=lighttask
+      - LIGHTTASK_CONFIG__QUEUE__HOST=rabbitmq
+      - LIGHTTASK_SKIP_MIGRATIONS=1
+    depends_on:
+      db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      migrations:
+        condition: service_completed_successfully
+    networks:
+      - backend-db
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 networks:
   frontend-api:
   backend-db:
@@ -147,3 +250,4 @@ volumes:
   caddy_data:
   caddy_config:
   jwt_certs_prod:
+  rabbitmq_data_prod:

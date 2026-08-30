@@ -1,6 +1,20 @@
 name: lighttask_dev
 
 services:
+  rabbitmq:
+    image: rabbitmq:4-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: ${LIGHTTASK_CONFIG__QUEUE__USER:-lighttask}
+      RABBITMQ_DEFAULT_PASS: ${LIGHTTASK_CONFIG__QUEUE__PASSWORD:-lighttask-dev}
+      RABBITMQ_DEFAULT_VHOST: ${LIGHTTASK_CONFIG__QUEUE__VIRTUAL_HOST:-kantano}
+    volumes:
+      - ./rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+      - rabbitmq_data_dev:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
   redis:
     image: redis:7-alpine
     restart: always
@@ -79,6 +93,8 @@ services:
     environment:
       - LIGHTTASK_CONFIG__DB__HOST=db
       - LIGHTTASK_CONFIG__REALTIME__REDIS_URL=redis://redis:6379/0
+      - LIGHTTASK_CONFIG__QUEUE__HOST=rabbitmq
+      - LIGHTTASK_SKIP_MIGRATIONS=1
     depends_on:
       local-storage-init:
         condition: service_completed_successfully
@@ -88,8 +104,52 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      migrations:
+        condition: service_completed_successfully
+  migrations:
+    build: ./backend/light_task
+    command: ["true"]
+    env_file: .env
+    environment:
+      - LIGHTTASK_CONFIG__DB__HOST=db
+    depends_on:
+      db:
+        condition: service_healthy
+  celery-worker:
+    build: ./backend/light_task
+    command: celery -A src.registration.celery_app worker --pool=solo --without-mingle --without-gossip --without-heartbeat --loglevel=INFO
+    env_file: .env
+    environment:
+      - LIGHTTASK_CONFIG__DB__HOST=db
+      - LIGHTTASK_CONFIG__QUEUE__HOST=rabbitmq
+      - LIGHTTASK_SKIP_MIGRATIONS=1
+    depends_on:
+      db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      migrations:
+        condition: service_completed_successfully
+  outbox-publisher:
+    build: ./backend/light_task
+    command: python -m src.registration.outbox_publisher
+    env_file: .env
+    environment:
+      - LIGHTTASK_CONFIG__DB__HOST=db
+      - LIGHTTASK_CONFIG__QUEUE__HOST=rabbitmq
+      - LIGHTTASK_SKIP_MIGRATIONS=1
+    depends_on:
+      db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      migrations:
+        condition: service_completed_successfully
 
 volumes:
   postgres_data_dev:
   local_storage_dev:
   jwt_certs_dev:
+  rabbitmq_data_dev:

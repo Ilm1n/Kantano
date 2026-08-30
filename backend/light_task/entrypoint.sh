@@ -12,8 +12,10 @@ done
 
 echo "PostgreSQL started at ${DB_HOST}:${DB_PORT}"
 
-echo "Running migrations..."
-alembic upgrade head
+if [ "${LIGHTTASK_SKIP_MIGRATIONS:-0}" != "1" ]; then
+  echo "Running migrations..."
+  alembic upgrade head
+fi
 
 echo "Starting application..."
 exec "$@"

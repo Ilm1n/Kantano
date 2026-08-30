@@ -11,7 +11,7 @@ concurrency:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_REPO_OWNER: ilm1n
+  IMAGE_REPO_OWNER: ${{ github.repository_owner }}
 
 jobs:
   prepare:
@@ -88,15 +88,19 @@ jobs:
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
           S3_ACCESS: ${{ secrets.S3_ACCESS_KEY }}
           S3_SECRET: ${{ secrets.S3_SECRET_KEY }}
-          S3_BUCKET: ${{ secrets.S3_BUCKET_NAME }}
+          S3_BUCKET: ${{ vars.S3_BUCKET_NAME }}
           OWNER: ${{ env.IMAGE_REPO_OWNER }}
           JWT_PRIVATE: ${{ secrets.JWT_PRIVATE_KEY }}
           JWT_PUBLIC: ${{ secrets.JWT_PUBLIC_KEY }}
           SWAGGER_HASH: ${{ secrets.SWAGGER_HASH }}
-          YANDEX_CLIENT_ID: ${{ secrets.YANDEX_CLIENT_ID }}
+          YANDEX_CLIENT_ID: ${{ vars.YANDEX_CLIENT_ID }}
           YANDEX_CLIENT_SECRET: ${{ secrets.YANDEX_CLIENT_SECRET }}
-          YANDEX_REDIRECT_URI: ${{ secrets.YANDEX_REDIRECT_URI }}
-          FRONTEND_BASE_URL: ${{ secrets.FRONTEND_BASE_URL }}
+          YANDEX_REDIRECT_URI: ${{ vars.YANDEX_REDIRECT_URI }}
+          FRONTEND_BASE_URL: ${{ vars.FRONTEND_BASE_URL }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          RESEND_FROM_EMAIL: ${{ vars.RESEND_FROM_EMAIL }}
+          RESEND_FROM_NAME: ${{ vars.RESEND_FROM_NAME }}
+          RABBITMQ_PASSWORD: ${{ secrets.RABBITMQ_PASSWORD }}
         run: |
           cat <<EOF > .env.prod
           LIGHTTASK_CONFIG__DB__PASSWORD=$DB_PASSWORD
@@ -108,6 +112,14 @@ jobs:
           LIGHTTASK_CONFIG__YANDEX__CLIENT_SECRET=$YANDEX_CLIENT_SECRET
           LIGHTTASK_CONFIG__YANDEX__REDIRECT_URI=$YANDEX_REDIRECT_URI
           LIGHTTASK_CONFIG__FRONTEND__BASE_URL=$FRONTEND_BASE_URL
+          LIGHTTASK_CONFIG__EMAIL__PROVIDER=resend
+          LIGHTTASK_CONFIG__RESEND__API_KEY=$RESEND_API_KEY
+          LIGHTTASK_CONFIG__RESEND__BASE_URL=https://api.resend.com
+          LIGHTTASK_CONFIG__RESEND__FROM_EMAIL=$RESEND_FROM_EMAIL
+          LIGHTTASK_CONFIG__RESEND__FROM_NAME=$RESEND_FROM_NAME
+          LIGHTTASK_CONFIG__QUEUE__USER=lighttask
+          LIGHTTASK_CONFIG__QUEUE__PASSWORD=$RABBITMQ_PASSWORD
+          LIGHTTASK_CONFIG__QUEUE__VIRTUAL_HOST=kantano
           IMAGE_REPO_OWNER=$OWNER
           IMAGE_TAG=$TAG
           SWAGGER_HASH='$SWAGGER_HASH'
@@ -123,7 +135,7 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_KEY }}
-          source: "docker-compose.prod.yml,.env.prod,Caddyfile,certs/"
+          source: "docker-compose.prod.yml,.env.prod,Caddyfile,rabbitmq.conf,certs/"
           target: "/home/${{ secrets.VPS_USER }}/app"
 
       - name: Deploy via SSH
