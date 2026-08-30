@@ -59,6 +59,7 @@ async def _dispatch_outbox_event(event: OutboxEvent) -> None:
     event.payload = json.dumps({"pending_registration_id": payload["pending_registration_id"]})
     registration_logger.info("Outbox event published event_id=%s", event.id)
 
+
 async def main() -> None:
     while True:
         try:
@@ -66,6 +67,7 @@ async def main() -> None:
         except Exception:
             registration_logger.exception("Outbox publisher loop failed")
         await asyncio.sleep(2)
+
 
 if __name__ == "__main__":
     asyncio.run(main())

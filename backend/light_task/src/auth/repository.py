@@ -35,7 +35,9 @@ class AuthRepository:
         return result.scalar_one_or_none() is not None
 
     async def delete_pending_by_email(self, email: str) -> None:
-        await self.session.execute(delete(PendingRegistration).where(PendingRegistration.email == email))
+        await self.session.execute(
+            delete(PendingRegistration).where(PendingRegistration.email == email)
+        )
 
     def add_yandex_user(
         self,

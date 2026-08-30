@@ -106,7 +106,14 @@ def build_yandex_start_result(next_path: str | None) -> YandexStartResult:
     safe_next = safe_next_path(next_path)
     state = secrets.token_urlsafe(32)
     cookie_value = f"{state}|{safe_next}"
-    query = urlencode({"response_type": "code", "client_id": settings.yandex.client_id, "redirect_uri": settings.yandex.redirect_uri, "state": state})
+    query = urlencode(
+        {
+            "response_type": "code",
+            "client_id": settings.yandex.client_id,
+            "redirect_uri": settings.yandex.redirect_uri,
+            "state": state,
+        }
+    )
     url = f"{settings.yandex.authorize_url}?{query}"
     return YandexStartResult(
         authorize_url=url,

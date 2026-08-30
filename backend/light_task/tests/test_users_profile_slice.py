@@ -19,7 +19,7 @@ def _register(
     username: str,
     email: str,
     password: str = PASSWORD,
-)-> None:
+) -> None:
     register_and_confirm(
         client,
         username=username,

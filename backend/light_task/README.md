@@ -37,9 +37,13 @@ docker compose -f docker-compose.dev.yml up --build
 ```bash
 cd backend/light_task
 uv sync --group dev
+uv run pre-commit install
 uv run alembic upgrade head
 uv run uvicorn src.main:main_app --host 127.0.0.1 --port 8000 --reload
 ```
+
+`pre-commit install` выполняется один раз после клонирования репозитория. После этого
+Ruff автоматически проверяет и форматирует Python-файлы перед каждым коммитом.
 
 Backend использует Python 3.12. Конфигурация загружается из корневого `.env` и
 переменных `LIGHTTASK_CONFIG__*`. PostgreSQL, Redis, RabbitMQ и JWT-ключи обязательны

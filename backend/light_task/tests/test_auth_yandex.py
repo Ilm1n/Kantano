@@ -169,7 +169,9 @@ def test_yandex_callback_rejects_unverified_local_email(
     )
 
     assert response.status_code == 302
-    assert response.headers["location"] == "http://localhost:5173/login?oauth_error=email_not_verified"
+    assert (
+        response.headers["location"] == "http://localhost:5173/login?oauth_error=email_not_verified"
+    )
 
 
 def test_yandex_callback_uses_linked_user_by_yandex_id(
