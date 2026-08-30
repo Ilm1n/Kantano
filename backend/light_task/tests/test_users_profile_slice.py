@@ -4,6 +4,8 @@ from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
+from tests.registration_helpers import register_and_confirm
+
 PASSWORD = "VeryStrongPass123!"
 
 
@@ -17,14 +19,12 @@ def _register(
     username: str,
     email: str,
     password: str = PASSWORD,
-):
-    return client.post(
-        "/api/users/register",
-        json={
-            "username": username,
-            "email": email,
-            "password": password,
-        },
+)-> None:
+    register_and_confirm(
+        client,
+        username=username,
+        email=email,
+        password=password,
     )
 
 
@@ -39,12 +39,11 @@ def _register_and_login(
     local_part, _, domain = email.partition("@")
     unique_email = f"{local_part}+{suffix}@{domain}" if domain else f"{email}_{suffix}"
 
-    register_resp = _register(
+    _register(
         client,
         username=unique_username,
         email=unique_email,
     )
-    assert register_resp.status_code == 201, register_resp.text
 
     login_resp = client.post(
         "/api/auth/login",
@@ -65,16 +64,12 @@ def _assert_error_code(response, expected_code: str) -> None:
     assert response.json() == {"error": {"code": expected_code}}
 
 
-def test_register_and_read_user_response_shape(client: TestClient) -> None:
-    suffix = uuid4().hex[:8]
-    response = _register(
+def test_confirmed_user_read_response_shape(client: TestClient) -> None:
+    payload = _register_and_login(
         client,
-        username=f"profile_user_{suffix}",
-        email=f"profile_user+{suffix}@example.com",
-    )
-
-    assert response.status_code == 201, response.text
-    payload = response.json()
+        username="profile_user",
+        email="profile_user@example.com",
+    )["user"]
     assert payload["username"].startswith("profile_user_")
     assert payload["email"].startswith("profile_user+")
     assert payload["isActive"] is True
@@ -83,19 +78,20 @@ def test_register_and_read_user_response_shape(client: TestClient) -> None:
     assert payload["avatarUrl"] is None
 
 
-def test_duplicate_register_returns_username_or_email_exists(
+def test_duplicate_registration_is_neutral(
     client: TestClient,
 ) -> None:
     suffix = uuid4().hex[:8]
     username = f"duplicate_user_{suffix}"
     email = f"duplicate_user+{suffix}@example.com"
-    first_response = _register(client, username=username, email=email)
-    assert first_response.status_code == 201, first_response.text
+    _register(client, username=username, email=email)
+    duplicate_response = client.post(
+        "/api/registration",
+        json={"username": username, "email": email},
+    )
 
-    duplicate_response = _register(client, username=username, email=email)
-
-    assert duplicate_response.status_code == 409
-    _assert_error_code(duplicate_response, "USERNAME_OR_EMAIL_EXISTS")
+    assert duplicate_response.status_code == 202
+    assert duplicate_response.json() == {"detail": "CHECK_YOUR_EMAIL"}
 
 
 def test_update_me_and_public_read_response_shape(client: TestClient) -> None:

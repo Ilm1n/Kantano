@@ -79,6 +79,17 @@ def _setup_test_env() -> None:
     )
     os.environ.setdefault("LIGHTTASK_CONFIG__REALTIME__PRESENCE_TTL_SECONDS", "2")
     os.environ.setdefault("LIGHTTASK_CONFIG__REALTIME__PRESENCE_SYNC_INTERVAL_SECONDS", "1")
+    os.environ.setdefault(
+        "LIGHTTASK_CONFIG__QUEUE__HOST",
+        os.getenv("LIGHTTASK_TEST_RABBITMQ_HOST", "127.0.0.1"),
+    )
+    os.environ.setdefault(
+        "LIGHTTASK_CONFIG__QUEUE__PORT",
+        os.getenv("LIGHTTASK_TEST_RABBITMQ_PORT", "55672"),
+    )
+    os.environ.setdefault("LIGHTTASK_CONFIG__QUEUE__USER", "lighttask")
+    os.environ.setdefault("LIGHTTASK_CONFIG__QUEUE__PASSWORD", "lighttask-test")
+    os.environ.setdefault("LIGHTTASK_CONFIG__QUEUE__VIRTUAL_HOST", "kantano")
 
     _validate_test_isolation()
 

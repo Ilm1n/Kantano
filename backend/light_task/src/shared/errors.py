@@ -97,6 +97,20 @@ class ServiceUnavailableError(AppError):
         super().__init__(code, status_code=503, params=params)
 
 
+class TooManyRequestsError(AppError):
+    def __init__(
+        self,
+        code: ErrorCode | str,
+        *,
+        retry_after_seconds: int,
+    ) -> None:
+        super().__init__(
+            code,
+            status_code=429,
+            headers={"Retry-After": str(retry_after_seconds)},
+        )
+
+
 class DatabaseError(AppError):
     def __init__(
         self,

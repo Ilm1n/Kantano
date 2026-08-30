@@ -1,3 +1,4 @@
+# ruff: noqa: I001
 from contextlib import asynccontextmanager
 
 import uvicorn
@@ -19,6 +20,8 @@ from src.invitations.router import router as invitation_router
 from src.logger import get_logger, setup_logging
 from src.projects.models import Project, ProjectMember  # noqa: F401
 from src.projects.router import router as project_router
+from src.registration.models import OutboxEvent, PendingRegistration  # noqa: F401
+from src.registration.router import router as registration_router
 from src.realtimev1.router import router as realtime_router
 from src.realtimev1.runtime import build_realtime_runtime
 from src.shared.errors import AppError
@@ -69,6 +72,7 @@ if settings.s3.backend == "local":
 
 main_app.include_router(auth_router, prefix="/api")
 main_app.include_router(user_router, prefix="/api")
+main_app.include_router(registration_router, prefix="/api")
 main_app.include_router(project_router, prefix="/api")
 main_app.include_router(board_router, prefix="/api")
 main_app.include_router(tag_router, prefix="/api")

@@ -7,13 +7,6 @@ from src.users.models import User
 
 
 @dataclass(frozen=True, kw_only=True)
-class RegisterUserCommand:
-    username: str
-    email: str
-    password: str
-
-
-@dataclass(frozen=True, kw_only=True)
 class GetUserQuery:
     user_id: int
 

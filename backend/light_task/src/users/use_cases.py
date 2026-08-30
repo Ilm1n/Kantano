@@ -21,7 +21,6 @@ from src.users.dto import (
     AvatarMutationResult,
     DeleteAvatarCommand,
     GetUserQuery,
-    RegisterUserCommand,
     UpdateUserCommand,
     UpdateUserPasswordCommand,
     UploadAvatarCommand,
@@ -50,39 +49,6 @@ class GetUserUseCase:
             user_logger.exception(
                 "Failed to read user %s",
                 query.user_id,
-                exc_info=exc,
-            )
-            raise DatabaseError() from exc
-
-
-class RegisterUserUseCase:
-    def __init__(self, uow_factory: Callable[[], UnitOfWork]) -> None:
-        self._uow_factory = uow_factory
-
-    async def execute(self, command: RegisterUserCommand) -> User:
-        try:
-            async with self._uow_factory() as uow:
-                if uow.session is None:
-                    raise RuntimeError("UnitOfWork has not been entered")
-
-                repository = UserRepository(uow.session)
-                user = repository.add_user(
-                    email=command.email,
-                    username=command.username,
-                    hashed_password=hash_password(command.password),
-                )
-                await repository.flush()
-                await repository.refresh_user(user)
-                return user
-        except IntegrityError as exc:
-            user_logger.warning("Failed to create user - username/email already exists")
-            raise ConflictError(ErrorCode.USERNAME_OR_EMAIL_EXISTS) from exc
-        except AppError:
-            raise
-        except Exception as exc:
-            user_logger.exception(
-                "Failed to create user %s",
-                command.username,
                 exc_info=exc,
             )
             raise DatabaseError() from exc

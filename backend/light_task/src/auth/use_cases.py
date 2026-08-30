@@ -30,6 +30,9 @@ class LoginUseCase:
                     )
                     raise UnauthorizedError(ErrorCode.INVALID_CREDENTIALS)
 
+                if user.email_verified_at is None:
+                    raise ForbiddenError(ErrorCode.EMAIL_NOT_VERIFIED)
+
                 if not user.hashed_password:
                     raise UnauthorizedError(ErrorCode.PASSWORD_LOGIN_UNAVAILABLE)
 
@@ -84,6 +87,8 @@ class RefreshTokenUseCase:
                     raise UnauthorizedError(ErrorCode.USER_NOT_FOUND)
                 if not user.is_active:
                     raise ForbiddenError(ErrorCode.INACTIVE_USER)
+                if user.email_verified_at is None:
+                    raise ForbiddenError(ErrorCode.EMAIL_NOT_VERIFIED)
 
                 auth_logger.info("Token issued for user %s", user.id)
                 return create_token_result(user)

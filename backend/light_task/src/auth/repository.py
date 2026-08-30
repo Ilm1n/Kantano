@@ -1,8 +1,11 @@
 from __future__ import annotations
 
-from sqlalchemy import or_, select
+from datetime import datetime
+
+from sqlalchemy import delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.registration.models import PendingRegistration
 from src.users.models import User
 
 
@@ -31,6 +34,9 @@ class AuthRepository:
         result = await self.session.execute(select(User.id).where(User.username == username))
         return result.scalar_one_or_none() is not None
 
+    async def delete_pending_by_email(self, email: str) -> None:
+        await self.session.execute(delete(PendingRegistration).where(PendingRegistration.email == email))
+
     def add_yandex_user(
         self,
         *,
@@ -38,6 +44,7 @@ class AuthRepository:
         username: str,
         full_name: str | None,
         yandex_id: str,
+        email_verified_at: datetime | None = None,
     ) -> User:
         user = User(
             email=email,
@@ -45,6 +52,7 @@ class AuthRepository:
             full_name=full_name,
             hashed_password=None,
             yandex_id=yandex_id,
+            email_verified_at=email_verified_at,
         )
         self.session.add(user)
         return user

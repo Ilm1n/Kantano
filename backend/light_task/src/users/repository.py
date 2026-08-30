@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.users.models import User
@@ -18,11 +20,13 @@ class UserRepository:
         email: str,
         username: str,
         hashed_password: str | None,
+        email_verified_at: datetime | None = None,
     ) -> User:
         user = User(
             email=email,
             username=username,
             hashed_password=hashed_password,
+            email_verified_at=email_verified_at,
         )
         self.session.add(user)
         return user

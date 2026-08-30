@@ -6,6 +6,7 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 
 from src.realtimev1.events import RealtimeEventType
+from tests.registration_helpers import register_and_confirm
 
 PASSWORD = "VeryStrongPass123!"
 
@@ -21,15 +22,12 @@ def _register_and_login(
     local_part, _, domain = email.partition("@")
     unique_email = f"{local_part}+{suffix}@{domain}" if domain else f"{email}_{suffix}"
 
-    register_resp = client.post(
-        "/api/users/register",
-        json={
-            "username": unique_username,
-            "email": unique_email,
-            "password": PASSWORD,
-        },
+    register_and_confirm(
+        client,
+        username=unique_username,
+        email=unique_email,
+        password=PASSWORD,
     )
-    assert register_resp.status_code == 201, register_resp.text
 
     login_resp = client.post(
         "/api/auth/login",

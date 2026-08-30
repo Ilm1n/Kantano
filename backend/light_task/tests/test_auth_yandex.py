@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime
 from http.cookies import SimpleCookie
 from urllib.parse import parse_qs, urlparse
 
@@ -11,6 +12,7 @@ from src.auth.yandex import YandexOAuthClient, YandexOAuthError, YandexProfile
 from src.db.database import db_helper
 from src.security import hash_password
 from src.users.models import User
+from tests.registration_helpers import register_and_confirm
 
 PASSWORD = "VeryStrongPass123!"
 
@@ -77,6 +79,7 @@ async def _create_local_user(
     username: str,
     email: str,
     yandex_id: str | None = None,
+    email_verified: bool = True,
 ) -> User:
     async with db_helper.async_session_maker() as session:
         user = User(
@@ -84,6 +87,7 @@ async def _create_local_user(
             email=email,
             hashed_password=hash_password(PASSWORD),
             yandex_id=yandex_id,
+            email_verified_at=datetime.now(UTC) if email_verified else None,
         )
         session.add(user)
         await session.commit()
@@ -114,6 +118,7 @@ def test_yandex_callback_creates_new_user(client: TestClient, monkeypatch) -> No
     assert user.yandex_id == "yandex-123"
     assert user.username == "ivan"
     assert user.hashed_password is None
+    assert user.email_verified_at is not None
 
 
 def test_yandex_callback_auto_links_existing_user_by_email(
@@ -141,6 +146,30 @@ def test_yandex_callback_auto_links_existing_user_by_email(
     assert user.id == local_user.id
     assert user.yandex_id == "yandex-123"
     assert user.hashed_password is not None
+
+
+def test_yandex_callback_rejects_unverified_local_email(
+    client: TestClient,
+    monkeypatch,
+) -> None:
+    _patch_yandex_success(monkeypatch)
+    asyncio.run(
+        _create_local_user(
+            username="unverified",
+            email="yandex-user@example.com",
+            email_verified=False,
+        )
+    )
+    state = _state_from_start_response(client)
+
+    response = client.get(
+        "/api/auth/yandex/callback",
+        params={"code": "valid-code", "state": state},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 302
+    assert response.headers["location"] == "http://localhost:5173/login?oauth_error=email_not_verified"
 
 
 def test_yandex_callback_uses_linked_user_by_yandex_id(
@@ -252,15 +281,12 @@ def test_yandex_callback_requires_email(client: TestClient, monkeypatch) -> None
 
 
 def test_password_login_still_works(client: TestClient) -> None:
-    response = client.post(
-        "/api/users/register",
-        json={
-            "username": "password_user",
-            "email": "password-user@example.com",
-            "password": PASSWORD,
-        },
+    register_and_confirm(
+        client,
+        username="password_user",
+        email="password-user@example.com",
+        password=PASSWORD,
     )
-    assert response.status_code == 201, response.text
 
     response = client.post(
         "/api/auth/login",
@@ -324,15 +350,12 @@ def test_yandex_user_can_set_password_and_use_password_login(
 def test_password_update_requires_current_password_for_password_user(
     client: TestClient,
 ) -> None:
-    register_response = client.post(
-        "/api/users/register",
-        json={
-            "username": "password_update_user",
-            "email": "password-update-user@example.com",
-            "password": PASSWORD,
-        },
+    register_and_confirm(
+        client,
+        username="password_update_user",
+        email="password-update-user@example.com",
+        password=PASSWORD,
     )
-    assert register_response.status_code == 201, register_response.text
 
     login_response = client.post(
         "/api/auth/login",

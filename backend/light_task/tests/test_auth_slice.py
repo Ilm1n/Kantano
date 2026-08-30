@@ -4,6 +4,8 @@ from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
+from tests.registration_helpers import register_and_confirm
+
 PASSWORD = "VeryStrongPass123!"
 
 
@@ -13,15 +15,12 @@ def _register(
     username: str,
     email: str,
 ) -> None:
-    response = client.post(
-        "/api/users/register",
-        json={
-            "username": username,
-            "email": email,
-            "password": PASSWORD,
-        },
+    register_and_confirm(
+        client,
+        username=username,
+        email=email,
+        password=PASSWORD,
     )
-    assert response.status_code == 201, response.text
 
 
 def _assert_error_code(response, expected_code: str) -> None:

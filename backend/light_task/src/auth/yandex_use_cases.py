@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from datetime import UTC, datetime
 
 from sqlalchemy.exc import IntegrityError
 
@@ -58,6 +59,8 @@ class YandexCallbackUseCase:
                 if user is not None:
                     if user.yandex_id and user.yandex_id != profile.yandex_id:
                         raise YandexOAuthError("email_already_linked")
+                    if user.email_verified_at is None:
+                        raise YandexOAuthError("email_not_verified")
                     user.yandex_id = profile.yandex_id
                     if not user.full_name and profile.full_name:
                         user.full_name = profile.full_name
@@ -75,9 +78,11 @@ class YandexCallbackUseCase:
                     username=username,
                     full_name=profile.full_name,
                     yandex_id=profile.yandex_id,
+                    email_verified_at=datetime.now(UTC),
                 )
                 await repository.flush()
                 await repository.refresh_user(user)
+                await repository.delete_pending_by_email(profile.email)
                 return YandexCallbackResult(user=user, next_path=next_path)
         except YandexOAuthError:
             raise

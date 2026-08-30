@@ -1,5 +1,6 @@
 from pathlib import Path
 from typing import Literal
+from urllib.parse import quote
 
 from pydantic import BaseModel, PostgresDsn, computed_field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -23,6 +24,41 @@ class InvitationConfig(BaseModel):
 
 class FrontendConfig(BaseModel):
     base_url: str = "http://localhost:5173"
+
+
+class ResendConfig(BaseModel):
+    base_url: str = "https://api.resend.com"
+    api_key: str = ""
+    from_email: str = "no-reply@kantano.ru"
+    from_name: str = "Kantano"
+
+
+class EmailConfig(BaseModel):
+    provider: Literal["resend"] = "resend"
+
+
+class QueueConfig(BaseModel):
+    host: str = "localhost"
+    port: int = 5672
+    user: str = "lighttask"
+    password: str = "lighttask-dev"  # noqa: S105
+    virtual_host: str = "kantano"
+
+    @computed_field
+    @property
+    def broker_url(self) -> str:
+        virtual_host = "/" if self.virtual_host == "/" else quote(self.virtual_host, safe="")
+        return (
+            f"amqp://{quote(self.user, safe='')}:{quote(self.password, safe='')}"
+            f"@{self.host}:{self.port}/{virtual_host}"
+        )
+
+
+class RegistrationConfig(BaseModel):
+    verification_ttl_hours: int = 24
+    resend_cooldown_seconds: int = 60
+    max_emails_per_hour: int = 3
+    max_requests_per_ip_hour: int = 10
 
 
 class YandexConfig(BaseModel):
@@ -126,6 +162,10 @@ class Settings(BaseSettings):
     auth_jwt: AuthJWT = AuthJWT()
     invite: InvitationConfig = InvitationConfig()
     frontend: FrontendConfig = FrontendConfig()
+    email: EmailConfig = EmailConfig()
+    resend: ResendConfig = ResendConfig()
+    queue: QueueConfig = QueueConfig()
+    registration: RegistrationConfig = RegistrationConfig()
     yandex: YandexConfig = YandexConfig()
     s3: S3Config
     files: Files = Files()

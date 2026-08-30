@@ -8,7 +8,6 @@ import pytest
 from src.errors import ErrorCode
 from src.shared.errors import DatabaseError
 from src.users.dto import (
-    RegisterUserCommand,
     UpdateUserCommand,
     UpdateUserPasswordCommand,
     UploadAvatarCommand,
@@ -16,7 +15,6 @@ from src.users.dto import (
 from src.users.repository import UserRepository
 from src.users.storage import LocalAvatarStorageGateway
 from src.users.use_cases import (
-    RegisterUserUseCase,
     UpdateUserPasswordUseCase,
     UpdateUserUseCase,
     UploadAvatarUseCase,
@@ -129,26 +127,6 @@ async def test_user_repository_methods_do_not_commit() -> None:
     assert session.flush_count == 1
     assert session.refresh_count == 1
     assert session.commit_count == 0
-
-
-@pytest.mark.asyncio
-async def test_register_user_use_case_hashes_password(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    uow = FakeUnitOfWork()
-    monkeypatch.setattr("src.users.use_cases.UserRepository", FakeUserRepository)
-    monkeypatch.setattr("src.users.use_cases.hash_password", lambda value: f"hashed:{value}")
-    use_case = RegisterUserUseCase(lambda: uow)  # type: ignore[arg-type]
-
-    result = await use_case.execute(
-        RegisterUserCommand(
-            username="user",
-            email="user@example.com",
-            password="password",
-        )
-    )
-
-    assert result.hashed_password == "hashed:password"
 
 
 @pytest.mark.asyncio

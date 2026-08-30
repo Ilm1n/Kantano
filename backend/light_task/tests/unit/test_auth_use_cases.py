@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
@@ -8,7 +9,7 @@ from src.auth.dto import LoginCommand, RefreshTokenCommand
 from src.auth.repository import AuthRepository
 from src.auth.use_cases import LoginUseCase, RefreshTokenUseCase
 from src.errors import ErrorCode
-from src.shared.errors import UnauthorizedError
+from src.shared.errors import ForbiddenError, UnauthorizedError
 
 
 class FakeExecuteResult:
@@ -51,6 +52,7 @@ class FakeAuthRepository:
             email="user@example.com",
             hashed_password="hashed",
             is_active=True,
+            email_verified_at=datetime.now(UTC),
         )
 
     async def get_user_by_username_or_email(self, username_or_email: str):
@@ -104,3 +106,30 @@ async def test_refresh_use_case_rejects_missing_refresh_token() -> None:
         await use_case.execute(RefreshTokenCommand(refresh_token=None))
 
     assert exc_info.value.code == ErrorCode.REFRESH_TOKEN_MISSING
+
+
+@pytest.mark.asyncio
+async def test_login_and_refresh_reject_unverified_user(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class UnverifiedAuthRepository(FakeAuthRepository):
+        def __init__(self, session: object) -> None:
+            super().__init__(session)
+            self.user.email_verified_at = None
+
+    monkeypatch.setattr("src.auth.use_cases.AuthRepository", UnverifiedAuthRepository)
+    login_use_case = LoginUseCase(lambda: FakeSessionContext(object()))  # type: ignore[arg-type]
+
+    with pytest.raises(ForbiddenError) as login_error:
+        await login_use_case.execute(LoginCommand(username_or_email="user", password="password"))
+
+    monkeypatch.setattr(
+        "src.auth.use_cases.security.decode_jwt",
+        lambda token: {"sub": "1", "type": "refresh"},
+    )
+    refresh_use_case = RefreshTokenUseCase(lambda: FakeSessionContext(object()))  # type: ignore[arg-type]
+    with pytest.raises(ForbiddenError) as refresh_error:
+        await refresh_use_case.execute(RefreshTokenCommand(refresh_token="valid-refresh-token"))
+
+    assert login_error.value.code == ErrorCode.EMAIL_NOT_VERIFIED
+    assert refresh_error.value.code == ErrorCode.EMAIL_NOT_VERIFIED

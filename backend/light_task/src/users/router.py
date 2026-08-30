@@ -4,7 +4,6 @@ from fastapi import (
     APIRouter,
     BackgroundTasks,
     Depends,
-    status,
 )
 
 from src.auth.dependencies import get_current_user
@@ -15,13 +14,11 @@ from src.users.dependencies import valid_avatar
 from src.users.dto import (
     DeleteAvatarCommand,
     GetUserQuery,
-    RegisterUserCommand,
     UpdateUserCommand,
     UpdateUserPasswordCommand,
     UploadAvatarCommand,
 )
 from src.users.schemas import (
-    UserCreate,
     UserPasswordUpdate,
     UserPublic,
     UserRead,
@@ -31,7 +28,6 @@ from src.users.storage import AvatarStorageGateway, get_avatar_storage_gateway
 from src.users.use_cases import (
     DeleteAvatarUseCase,
     GetUserUseCase,
-    RegisterUserUseCase,
     UpdateUserPasswordUseCase,
     UpdateUserUseCase,
     UploadAvatarUseCase,
@@ -42,10 +38,6 @@ router = APIRouter(prefix="/users", tags=["Users"])
 
 def get_user_use_case() -> GetUserUseCase:
     return GetUserUseCase(db_helper.async_session_maker)
-
-
-def get_register_user_use_case() -> RegisterUserUseCase:
-    return RegisterUserUseCase(lambda: UnitOfWork())
 
 
 def get_update_user_use_case() -> UpdateUserUseCase:
@@ -66,23 +58,6 @@ def get_delete_avatar_use_case(
     storage: Annotated[AvatarStorageGateway, Depends(get_avatar_storage_gateway)],
 ) -> DeleteAvatarUseCase:
     return DeleteAvatarUseCase(lambda: UnitOfWork(), storage)
-
-
-@router.post(
-    "/register",
-    response_model=UserRead,
-    status_code=status.HTTP_201_CREATED,
-)
-async def create_user(
-    user_in: UserCreate,
-    use_case: Annotated[RegisterUserUseCase, Depends(get_register_user_use_case)],
-):
-    command = RegisterUserCommand(
-        username=user_in.username,
-        email=str(user_in.email),
-        password=user_in.password,
-    )
-    return await use_case.execute(command)
 
 
 @router.get("/me", response_model=UserRead)
