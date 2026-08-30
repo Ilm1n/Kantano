@@ -11,18 +11,20 @@ concurrency:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_REPO_OWNER: ${{ github.repository_owner }}
 
 jobs:
   prepare:
     runs-on: ubuntu-latest
     outputs:
       sha_short: ${{ steps.vars.outputs.sha_short }}
+      image_repo_owner: ${{ steps.vars.outputs.image_repo_owner }}
     steps:
       - uses: actions/checkout@v5
-      - name: Get short SHA
+      - name: Get image metadata
         id: vars
-        run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+        run: |
+          echo "sha_short=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          echo "image_repo_owner=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
 
   build-backend:
     runs-on: ubuntu-latest
@@ -47,8 +49,8 @@ jobs:
           cache-from: type=gha,scope=backend
           cache-to: type=gha,mode=max,scope=backend
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_REPO_OWNER }}/lighttask-backend:main
-            ${{ env.REGISTRY }}/${{ env.IMAGE_REPO_OWNER }}/lighttask-backend:${{ needs.prepare.outputs.sha_short }}
+            ${{ env.REGISTRY }}/${{ needs.prepare.outputs.image_repo_owner }}/lighttask-backend:main
+            ${{ env.REGISTRY }}/${{ needs.prepare.outputs.image_repo_owner }}/lighttask-backend:${{ needs.prepare.outputs.sha_short }}
 
   build-frontend:
     runs-on: ubuntu-latest
@@ -74,8 +76,8 @@ jobs:
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,mode=max,scope=frontend
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_REPO_OWNER }}/lighttask-frontend:main
-            ${{ env.REGISTRY }}/${{ env.IMAGE_REPO_OWNER }}/lighttask-frontend:${{ needs.prepare.outputs.sha_short }}
+            ${{ env.REGISTRY }}/${{ needs.prepare.outputs.image_repo_owner }}/lighttask-frontend:main
+            ${{ env.REGISTRY }}/${{ needs.prepare.outputs.image_repo_owner }}/lighttask-frontend:${{ needs.prepare.outputs.sha_short }}
 
   deploy:
     runs-on: ubuntu-latest
@@ -89,7 +91,7 @@ jobs:
           S3_ACCESS: ${{ secrets.S3_ACCESS_KEY }}
           S3_SECRET: ${{ secrets.S3_SECRET_KEY }}
           S3_BUCKET: ${{ vars.S3_BUCKET_NAME }}
-          OWNER: ${{ env.IMAGE_REPO_OWNER }}
+          OWNER: ${{ needs.prepare.outputs.image_repo_owner }}
           JWT_PRIVATE: ${{ secrets.JWT_PRIVATE_KEY }}
           JWT_PUBLIC: ${{ secrets.JWT_PUBLIC_KEY }}
           SWAGGER_HASH: ${{ secrets.SWAGGER_HASH }}
