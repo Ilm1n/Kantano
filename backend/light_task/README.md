@@ -7,7 +7,8 @@ FastAPI-приложение с REST API и WebSocket realtime для Kantano.
 ```text
 src/
 ├── auth/          # login, refresh и Yandex OAuth
-├── users/         # регистрация, профиль и аватары
+├── registration/  # подтверждение email, outbox и Celery-задачи
+├── users/         # профиль, пароль и аватары
 ├── projects/      # проекты, участники и роли
 ├── boards/        # колонки, задачи и ordering
 ├── tags/          # теги проекта
@@ -41,8 +42,9 @@ uv run uvicorn src.main:main_app --host 127.0.0.1 --port 8000 --reload
 ```
 
 Backend использует Python 3.12. Конфигурация загружается из корневого `.env` и
-переменных `LIGHTTASK_CONFIG__*`. PostgreSQL, Redis и JWT-ключи обязательны; Yandex OAuth
-и S3 в development можно не настраивать.
+переменных `LIGHTTASK_CONFIG__*`. PostgreSQL, Redis, RabbitMQ и JWT-ключи обязательны
+для полного запуска. Для реальных писем регистрации нужен API key настроенного
+почтового провайдера; Yandex OAuth и S3 в development можно не настраивать.
 
 Полная настройка окружения: [локальная разработка](../../docs/development.md).
 
@@ -55,7 +57,7 @@ uv run basedpyright
 uv run pytest -q tests/unit
 ```
 
-Полный pytest-набор использует отдельные PostgreSQL и Redis из
+Полный pytest-набор использует отдельные PostgreSQL, Redis и RabbitMQ из
 `../../docker-compose.test.yml`. Команды и правила изоляции описаны в
 [руководстве по тестированию](../../docs/testing.md).
 
@@ -73,4 +75,5 @@ pnpm gen:api
 ```
 
 Миграции находятся в `alembic/versions` и применяются командой
-`uv run alembic upgrade head`. Backend Docker entrypoint выполняет её автоматически.
+`uv run alembic upgrade head`. В Docker Compose их выполняет отдельный одноразовый
+сервис `migrations` до запуска backend, Celery worker и outbox publisher.

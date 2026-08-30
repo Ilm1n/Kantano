@@ -1,7 +1,8 @@
 # Архитектура Kantano
 
-Kantano состоит из Vue SPA, FastAPI backend, PostgreSQL и Redis. В production Caddy
-раздаёт собранный frontend, завершает TLS и проксирует HTTP/WebSocket-трафик в backend.
+Kantano состоит из Vue SPA, FastAPI backend, PostgreSQL, Redis и RabbitMQ. В production
+Caddy раздаёт собранный frontend, завершает TLS и проксирует HTTP/WebSocket-трафик в
+backend.
 
 ```mermaid
 flowchart TD
@@ -10,6 +11,11 @@ flowchart TD
     api["FastAPI application"]
     postgres[("PostgreSQL")]
     redis[("Redis Pub/Sub + presence")]
+    outbox[("PostgreSQL outbox")]
+    publisher["Outbox publisher"]
+    rabbit[("RabbitMQ")]
+    worker["Celery worker"]
+    email["Email provider API"]
     files["Local or S3-compatible storage"]
     oauth["Yandex ID"]
 
@@ -21,6 +27,8 @@ flowchart TD
     api --> redis
     api --> files
     api --> oauth
+    api --> outbox
+    outbox --> publisher --> rabbit --> worker --> email
 ```
 
 ## Backend-модули
@@ -28,7 +36,8 @@ flowchart TD
 Backend разделён на несколько функциональных модулей:
 
 - `auth` - login, refresh/logout и Yandex OAuth;
-- `users` - регистрация, профиль, пароль и аватар;
+- `registration` - заявка на регистрацию, подтверждение email, outbox и Celery-задача;
+- `users` - профиль, пароль и аватар;
 - `projects` - проекты, участники и роли;
 - `boards` - колонки, задачи, порядок и перемещение карточек;
 - `tags` - теги проекта;
@@ -69,6 +78,13 @@ flowchart LR
 
 ## Авторизация
 
+Регистрация по email состоит из двух шагов. Первый запрос атомарно создаёт
+`PendingRegistration` и `OutboxEvent`, но не пользователя. После доставки письма
+пользователь открывает одноразовую ссылку, задаёт пароль, и одна транзакция создаёт
+`User` с заполненным `email_verified_at` и удаляет заявку. Существующие пользователи
+помечаются подтверждёнными миграцией. Email из авторизованного профиля Yandex также
+считается подтверждённым.
+
 Локальный login возвращает короткоживущий access token и устанавливает refresh token в
 `HttpOnly` cookie. Frontend держит access token только в памяти. После перезагрузки
 страницы `restoreSession()` вызывает `/api/auth/refresh`, получает новый access token и
@@ -78,6 +94,43 @@ Yandex ID - дополнительный identity provider. OAuth callback об�
 проверяет state, получает профиль, находит или создаёт локального пользователя, ставит
 ту же refresh-cookie и возвращает SPA на `/auth/yandex/callback`. Локальный access token
 не передаётся в URL.
+
+## Фоновые письма
+
+```mermaid
+sequenceDiagram
+    participant API as FastAPI
+    participant DB as PostgreSQL
+    participant Publisher as Outbox publisher
+    participant MQ as RabbitMQ
+    participant Worker as Celery worker
+    participant Provider as Email provider API
+
+    API->>DB: PendingRegistration + OutboxEvent
+    Publisher->>DB: читает неопубликованное событие
+    Publisher->>MQ: persistent message + publisher confirm
+    Publisher->>DB: отмечает событие опубликованным
+    MQ->>Worker: verification task
+    Worker->>Provider: отправляет письмо подтверждения
+```
+
+Worker повторяет временные сетевые ошибки, `429` и `5xx` с backoff. Стабильный
+`Idempotency-Key` не даёт повторной доставке одной задачи создать второе письмо.
+Redis в этом процессе используется только для ограничения частоты запросов; брокером
+Celery служит RabbitMQ.
+
+## Внешние интеграции
+
+Архитектура зависит от внутренних интерфейсов, а не от конкретного поставщика:
+
+| Назначение | Интерфейс в приложении | Текущая реализация |
+|---|---|---|
+| Транзакционные письма | `EmailGateway` | `ResendGateway`, HTTPS API |
+| Внешний вход | OAuth use case | Yandex ID |
+| Файлы | Storage backend | Локальное или S3-compatible хранилище |
+
+Подключение другого почтового сервиса ограничено новым адаптером `EmailGateway` и его
+выбором в конфигурации. Регистрация, outbox и Celery-задача от провайдера не зависят.
 
 ## Realtime
 
@@ -106,9 +159,9 @@ mutation и сверяет результат с итоговым событие
 
 ## Данные и файлы
 
-PostgreSQL хранит пользователей, проекты, участников, колонки, задачи, теги и
-приглашения. Порядок колонок и задач задаётся числовым `position`; операции перемещения
-и rebalance находятся в backend.
+PostgreSQL хранит пользователей, заявки регистрации, outbox-события, проекты,
+участников, колонки, задачи, теги и приглашения. Порядок колонок и задач задаётся
+числовым `position`; операции перемещения и rebalance находятся в backend.
 
 Аватары в development сохраняются в Docker volume и отдаются FastAPI через
 `/local-storage`. В production используется S3-compatible bucket. Схема БД развивается

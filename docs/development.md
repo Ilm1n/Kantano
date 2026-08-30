@@ -47,9 +47,10 @@ pnpm dev
 | PostgreSQL | `localhost:5432` |
 | Redis | `localhost:6379` |
 
-`docker-compose.dev.yml` запускает PostgreSQL, Redis и backend. Init-сервисы копируют
-JWT-ключи в закрытый volume и подготавливают volume локального хранилища. Backend при
-старте ждёт PostgreSQL и автоматически применяет Alembic migrations.
+RabbitMQ доступен только сервисам внутри Compose network. `docker-compose.dev.yml`
+также запускает Celery worker и outbox publisher. Init-сервисы копируют JWT-ключи в
+закрытый volume и подготавливают локальное хранилище, а отдельный сервис `migrations`
+применяет Alembic migrations до запуска приложения и фоновых процессов.
 
 ## Конфигурация
 
@@ -69,6 +70,20 @@ LIGHTTASK_CONFIG__AUTH_JWT__SECURE=False
 `SECURE=False` нужен только для refresh-cookie на localhost по HTTP. В production
 используется безопасное значение по умолчанию `True`.
 
+Полный сценарий регистрации использует следующие настройки Resend:
+
+```dotenv
+LIGHTTASK_CONFIG__EMAIL__PROVIDER=resend
+LIGHTTASK_CONFIG__RESEND__API_KEY=<real-key>
+LIGHTTASK_CONFIG__RESEND__BASE_URL=https://api.resend.com
+LIGHTTASK_CONFIG__RESEND__FROM_EMAIL=no-reply@kantano.ru
+LIGHTTASK_CONFIG__RESEND__FROM_NAME=Kantano
+```
+
+Домен отправителя должен быть подтверждён в Resend. Ключ хранится только в локальном
+`.env` или GitHub Secrets и не должен попадать в commit или логи. Без ключа backend
+запустится, но Celery не сможет отправить письмо подтверждения.
+
 По умолчанию аватары сохраняются локально. Чтобы проверить S3-compatible storage,
 установите `LIGHTTASK_CONFIG__S3__BACKEND=s3` и заполните access key, secret key и
 bucket name.
@@ -83,10 +98,10 @@ Vite проксирует `/api` и `/ws` на `127.0.0.1:8000`. Для отде
 
 ## Запуск backend вне Docker
 
-PostgreSQL и Redis можно оставить в Compose:
+PostgreSQL, Redis и фоновые сервисы можно оставить в Compose:
 
 ```bash
-docker compose -f docker-compose.dev.yml up -d db redis
+docker compose -f docker-compose.dev.yml up -d db redis rabbitmq celery-worker outbox-publisher
 
 cd backend/light_task
 uv sync --group dev
@@ -95,7 +110,8 @@ uv run uvicorn src.main:main_app --host 127.0.0.1 --port 8000 --reload
 ```
 
 Значения `DB__HOST=localhost` и `REALTIME__REDIS_URL=redis://localhost:6379/0` из
-корневого `.env` подходят для такого режима.
+корневого `.env` подходят для такого режима. События регистрации обработают worker и
+publisher, работающие внутри Compose.
 
 ## Миграции
 
@@ -155,6 +171,9 @@ docker compose -f docker-compose.dev.yml up -d --force-recreate jwt-certs-init b
 - Backend не стартует: проверьте наличие обоих JWT-файлов и логи `jwt-certs-init`.
 - Realtime не подключается: frontend должен открываться через Vite на порту 5173, а
   Redis - отвечать на `localhost:6379`.
+- Письмо не приходит: основные точки диагностики —
+  `LIGHTTASK_CONFIG__RESEND__API_KEY`, статус домена отправителя и логи
+  `outbox-publisher`, `celery-worker`, `rabbitmq`.
 - Аватар не загружается: для local backend проверьте `S3__BACKEND=local`; для S3 -
   credentials, bucket и endpoint.
 - После изменения API появились TypeScript-ошибки: повторно экспортируйте OpenAPI и

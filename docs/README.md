@@ -5,10 +5,10 @@
 
 | Документ | О чём |
 |---|---|
-| [Архитектура](./architecture.md) | Компоненты системы, backend-слои, авторизация, realtime и API-контракт |
-| [Локальная разработка](./development.md) | Настройка окружения, запуск, миграции и генерация API-клиента |
-| [Тестирование](./testing.md) | Backend/frontend проверки, тестовая инфраструктура и CI |
-| [Деплой](./deployment.md) | Production Compose, GitHub Actions, секреты и ручной запуск |
+| [Архитектура](./architecture.md) | Компоненты, backend-слои, регистрация, фоновые задачи, realtime и API-контракт |
+| [Локальная разработка](./development.md) | Окружение, почтовый провайдер, запуск сервисов, миграции и генерация API-клиента |
+| [Тестирование](./testing.md) | Backend/frontend проверки, PostgreSQL, Redis, RabbitMQ и CI |
+| [Деплой](./deployment.md) | Production Compose, GitHub Actions, секреты и проверка после запуска |
 
 README отдельных приложений описывают только контекст соответствующего пакета:
 

@@ -1,8 +1,9 @@
 # Деплой и эксплуатация
 
-В production все сервисы запускаются на одном Docker Compose host. Caddy завершает TLS, раздаёт Vue SPA
-и проксирует `/api`, `/ws` и документацию FastAPI в backend. PostgreSQL и Redis доступны
-только во внутренних Docker networks; аватары хранятся в S3-compatible bucket.
+В production все сервисы запускаются на одном Docker Compose host. Caddy завершает TLS,
+раздаёт Vue SPA и проксирует `/api`, `/ws` и документацию FastAPI в backend. PostgreSQL,
+Redis и RabbitMQ доступны только во внутренних Docker networks; Celery отправляет
+транзакционные письма через внешний email API, а аватары хранятся в S3-compatible bucket.
 
 ## GitHub Actions
 
@@ -18,18 +19,31 @@
 5. выполняет `docker compose pull` и ждёт успешного health check;
 6. оставляет в GHCR пять последних версий каждого image.
 
-Нужные repository secrets:
+Repository Secrets:
 
 - `DB_PASSWORD`;
-- `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_BUCKET_NAME`;
+- `S3_ACCESS_KEY`, `S3_SECRET_KEY`;
 - `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`;
-- `YANDEX_CLIENT_ID`, `YANDEX_CLIENT_SECRET`, `YANDEX_REDIRECT_URI`;
-- `FRONTEND_BASE_URL`;
+- `YANDEX_CLIENT_SECRET`;
+- `RESEND_API_KEY`;
+- `RABBITMQ_PASSWORD`;
 - `SWAGGER_HASH`;
 - `VPS_HOST`, `VPS_USER`, `VPS_KEY`.
 
+Repository Variables:
+
+- `S3_BUCKET_NAME`;
+- `FRONTEND_BASE_URL`;
+- `YANDEX_CLIENT_ID`, `YANDEX_REDIRECT_URI`;
+- `RESEND_FROM_EMAIL=no-reply@kantano.ru`;
+- `RESEND_FROM_NAME=Kantano`.
+
 `GITHUB_TOKEN` предоставляется Actions автоматически. Значения секретов не должны
 храниться в репозитории или попадать в логи.
+
+Для отправки писем домен из `RESEND_FROM_EMAIL` должен быть подтверждён в Resend.
+Kantano использует HTTP API Resend, поэтому открытые исходящие SMTP-порты на VPS
+не требуются.
 
 ## Ручной запуск Compose
 
@@ -49,12 +63,39 @@ docker compose -f docker-compose.prod.yml pull
 docker compose -f docker-compose.prod.yml up -d --force-recreate --remove-orphans --wait
 ```
 
-Backend entrypoint ждёт PostgreSQL и выполняет `alembic upgrade head` до запуска API.
+Одноразовый сервис `migrations` ждёт PostgreSQL и выполняет `alembic upgrade head` до
+запуска API, Celery worker и outbox publisher.
 Успешность деплоя контролируется endpoint'ом `/api/health`.
+
+RabbitMQ использует отдельный vhost `kantano`, durable quorum-очередь
+`email_verification` и publisher confirms. Это устраняет зависимость Celery от
+устаревшего global QoS в RabbitMQ 4. Переход на classic queue требует отдельной
+проверки совместимости.
+
+Миграция заполняет `email_verified_at` всем существующим пользователям, поэтому после
+обновления они продолжают входить без повторного подтверждения почты.
+
+## Контроль состояния
+
+Состояние production-окружения и последние записи основных сервисов доступны через:
+
+```bash
+docker compose -f docker-compose.prod.yml ps
+docker compose -f docker-compose.prod.yml logs --tail=100 migrations backend rabbitmq celery-worker outbox-publisher
+```
+
+Успешный запуск означает завершение `migrations` с кодом `0` и рабочее состояние
+`backend`, `rabbitmq`, `celery-worker` и `outbox-publisher` без циклических перезапусков.
+
+При проверочной регистрации в логах отражаются четыре события: создана заявка,
+опубликовано outbox-событие, Celery получил задачу, почтовый провайдер принял письмо.
+После обработки очередь остаётся пустой, подтверждение создаёт пользователя, а обычный
+вход возвращает токены.
 
 ## Образы и откат
 
-`IMAGE_REPO_OWNER` задаёт владельца GHCR packages, а `IMAGE_TAG` - версию обоих образов.
+Владелец GHCR packages определяется автоматически из `github.repository_owner`, а `IMAGE_TAG` задаёт
+версию обоих образов.
 Для ручного отката укажите ранее опубликованный short SHA и повторно выполните `pull` и
 `up --wait`. Автоматическая очистка registry сохраняет только пять последних версий,
 поэтому старые теги не гарантированы.

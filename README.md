@@ -13,6 +13,7 @@ Kantano - веб-приложение для совместной работы �
 - [Быстрый старт](#быстрый-старт)
 - [Архитектура](#архитектура)
 - [Стек](#стек)
+- [Интеграции](#интеграции)
 - [Возможности](#возможности)
 - [Проверки](#проверки)
 - [Документация](#документация)
@@ -23,7 +24,7 @@ Kantano - веб-приложение для совместной работы �
 - настраиваемые колонки и drag-and-drop задач;
 - исполнители, теги, приоритеты, дедлайны и фильтры;
 - приглашения по ссылке или QR-коду с ограничением срока и числа использований;
-- регистрация по email и вход через Yandex ID;
+- регистрация с подтверждением email и вход через Yandex ID;
 - realtime-обновления доски, списка проектов и состава участников;
 - индикаторы присутствия: видно, кто находится на доске, просматривает или редактирует задачу;
 - профили пользователей и аватары в локальном или S3-compatible хранилище.
@@ -39,12 +40,22 @@ flowchart LR
     api --> redis[("Redis Pub/Sub")]
     api --> storage["Local storage / S3"]
     api --> yandex["Yandex ID"]
+    api --> outbox[("Transactional outbox")]
+    outbox --> publisher["Outbox publisher"]
+    publisher --> rabbit[("RabbitMQ")]
+    rabbit --> worker["Celery worker"]
+    worker --> email["Email provider API"]
 ```
 
 Backend разбит на функциональные модули. Роутеры передают запросы в use cases, работа с
 SQLAlchemy изолирована в repositories, а границы транзакций принадлежат `UnitOfWork`.
 Realtime-события публикуются только после успешного commit и доставляются
 между backend-процессами через Redis Pub/Sub.
+
+При регистрации пользователь создаётся только после перехода по ссылке из письма и
+задания пароля. Намерение отправить письмо сохраняется в PostgreSQL вместе с заявкой,
+после чего outbox publisher передаёт задачу через RabbitMQ в Celery worker. Worker
+обращается к внешнему email API через общий gateway-интерфейс.
 
 Во frontend используется сгенерированный из OpenAPI TypeScript-клиент. Access token хранится
 в памяти, refresh token - в `HttpOnly` cookie. При восстановлении страницы SPA обновляет
@@ -58,9 +69,18 @@ access token через backend и повторно подключает WebSock
 |---|---|
 | Frontend | Vue 3, TypeScript, Vite, Pinia, PrimeVue, Tailwind CSS |
 | Backend | Python 3.12, FastAPI, Pydantic, SQLAlchemy AsyncIO, Alembic |
-| Данные | PostgreSQL 15, Redis 7, local/S3-compatible storage |
+| Данные | PostgreSQL 15, Redis 7, RabbitMQ 4, local/S3-compatible storage |
+| Фоновые задачи | Celery, transactional outbox, email gateway |
 | Тестирование | pytest, pytest-asyncio, Vitest, Vue Test Utils |
 | Инфраструктура | Docker Compose, Caddy, GitHub Actions, GHCR |
+
+## Интеграции
+
+| Назначение | Текущая реализация |
+|---|---|
+| Транзакционные письма | Resend HTTPS API через `EmailGateway` |
+| Внешний вход | Yandex ID OAuth |
+| Файлы | Локальное или S3-compatible хранилище |
 
 ## Быстрый старт
 
@@ -79,8 +99,10 @@ openssl rsa -in backend/light_task/certs/jwt-private.pem -pubout -out backend/li
 docker compose -f docker-compose.dev.yml up --build
 ```
 
-После запуска Compose поднимет PostgreSQL, Redis и backend, применит миграции и подготовит локальное
-хранилище аватаров. После запуска доступны:
+После запуска Compose поднимет PostgreSQL, Redis, RabbitMQ, backend, Celery worker и
+outbox publisher, применит миграции и подготовит локальное хранилище аватаров. Для
+реальной отправки писем в локальном `.env` требуется `LIGHTTASK_CONFIG__RESEND__API_KEY`.
+После запуска доступны:
 
 - API: `http://localhost:8000/api`;
 - Swagger UI: `http://localhost:8000/docs`;
@@ -126,7 +148,7 @@ pnpm test:unit
 pnpm build
 ```
 
-Тесты backend по умолчанию используют отдельные PostgreSQL и Redis из
+Тесты backend по умолчанию используют отдельные PostgreSQL, Redis и RabbitMQ из
 `docker-compose.test.yml` и отказываются работать с dev-базой. Подробности и отдельные
 команды запуска есть в [руководстве по тестированию](./docs/testing.md).
 
