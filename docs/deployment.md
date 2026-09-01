@@ -23,16 +23,20 @@ Repository Secrets:
 
 - `DB_PASSWORD`;
 - `S3_ACCESS_KEY`, `S3_SECRET_KEY`;
+- `BACKUP_S3_ACCESS_KEY`, `BACKUP_S3_SECRET_KEY`;
 - `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`;
 - `YANDEX_CLIENT_SECRET`;
 - `RESEND_API_KEY`;
 - `RABBITMQ_PASSWORD`;
 - `SWAGGER_HASH`;
+- `RESTIC_PASSWORD`;
+- `BACKUP_PINGZEN_URL`;
 - `VPS_HOST`, `VPS_USER`, `VPS_KEY`.
 
 Repository Variables:
 
 - `S3_BUCKET_NAME`;
+- `BACKUP_S3_BUCKET_NAME`;
 - `FRONTEND_BASE_URL`;
 - `YANDEX_CLIENT_ID`, `YANDEX_REDIRECT_URI`;
 - `RESEND_FROM_EMAIL=no-reply@kantano.ru`;
@@ -40,6 +44,88 @@ Repository Variables:
 
 `GITHUB_TOKEN` предоставляется Actions автоматически. Значения секретов не должны
 храниться в репозитории или попадать в логи.
+
+## Резервные копии PostgreSQL
+
+### Параметры
+
+| Параметр | Значение |
+| --- | --- |
+| Расписание | ежедневно, `03:15` (`Europe/Moscow`) |
+| Источник данных | `pg_dump` базы `lighttask` в custom format |
+| Репозиторий | Restic в отдельном S3-compatible bucket |
+| Шифрование | client-side, пароль `RESTIC_PASSWORD` |
+| Проверка доступности дампа | `pg_restore --list` до загрузки |
+| Мониторинг | PingZen Heartbeat |
+
+Workflow `deploy.yml` создаёт repository Restic при первом деплое и поддерживает
+системную cron-задачу на VPS. Запуск выполняется скриптом `scripts/backup-db.sh` без
+остановки PostgreSQL или приложений.
+
+### Инфраструктура и конфигурация
+
+Для backup создаётся отдельный S3 bucket. Требования к bucket:
+
+- доступ без публичной политики;
+- отдельная пара S3 keys с доступом только к этому bucket;
+- отключённые S3 versioning и lifecycle rules.
+
+| GitHub Actions Secret | Назначение |
+| --- | --- |
+| `BACKUP_S3_ACCESS_KEY` | S3 access key для backup bucket |
+| `BACKUP_S3_SECRET_KEY` | S3 secret key для backup bucket |
+| `RESTIC_PASSWORD` | пароль шифрования repository |
+| `BACKUP_PINGZEN_URL` | базовый URL PingZen Heartbeat |
+
+| GitHub Actions Variable | Назначение |
+| --- | --- |
+| `BACKUP_S3_BUCKET_NAME` | имя backup bucket |
+
+`RESTIC_PASSWORD` хранится также вне GitHub Actions и VPS. Потеря пароля делает
+восстановление данных из repository невозможным.
+
+### Retention
+
+После успешной загрузки выполняется `restic forget --keep-daily 3 --keep-last 1 --prune`
+для snapshot с host `kantano-prod` и tag `kantano-db`. Политика сохраняет до трёх
+ежедневных snapshot и последний успешный snapshot; суммарно — не более четырёх копий.
+При ошибке создания, проверки или загрузки дампа retention не выполняется.
+
+### Мониторинг backup
+
+Выполнение backup контролируется PingZen Heartbeat с интервалом `24 hours` и grace period
+`2 hours`. `BACKUP_PINGZEN_URL` содержит базовый endpoint; скрипт передаёт сигналы
+`/start`, `/success` и `/fail`.
+
+### Операционные команды
+
+Одноразовый проверочный запуск после деплоя:
+
+```bash
+cd ~/app
+./scripts/backup-db.sh
+```
+
+Проверка snapshot и журнала cron:
+
+```bash
+docker run --rm --env-file .env.backup restic/restic:0.19.1 snapshots --host kantano-prod --tag kantano-db
+journalctl -t kantano-backup --since "24 hours ago"
+```
+
+### Восстановление в проверочную БД
+
+Восстановление выполняется только в изолированный PostgreSQL 15. Извлеките последний
+дамп и проверьте его структуру:
+
+```bash
+docker run --rm --env-file .env.backup restic/restic:0.19.1 dump latest /kantano.dump > /tmp/kantano.dump
+docker run --rm -v /tmp:/backup:ro postgres:15.6-alpine3.19 pg_restore --list /backup/kantano.dump
+```
+
+Для импорта используйте `pg_restore --no-owner --no-acl`. После импорта проверьте Alembic
+revision, состав таблиц и контрольные количества записей. Custom dump не содержит
+cluster-level roles; пользователь `lighttask_user` создаётся production Compose-конфигурацией.
 
 Для отправки писем домен из `RESEND_FROM_EMAIL` должен быть подтверждён в Resend.
 Kantano использует HTTP API Resend, поэтому открытые исходящие SMTP-порты на VPS

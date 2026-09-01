@@ -13,6 +13,7 @@ Kantano - веб-приложение для совместной работы �
 - [Быстрый старт](#быстрый-старт)
 - [Архитектура](#архитектура)
 - [Стек](#стек)
+- [Эксплуатация](#эксплуатация)
 - [Интеграции](#интеграции)
 - [Возможности](#возможности)
 - [Проверки](#проверки)
@@ -73,6 +74,16 @@ access token через backend и повторно подключает WebSock
 | Фоновые задачи | Celery, transactional outbox, email gateway |
 | Тестирование | pytest, pytest-asyncio, Vitest, Vue Test Utils |
 | Инфраструктура | Docker Compose, Caddy, GitHub Actions, GHCR |
+
+## Эксплуатация
+
+- CI/CD в GitHub Actions: сборка и публикация образов в GHCR, деплой на VPS через Docker Compose;
+- TLS termination и reverse proxy на Caddy; health check приложения после деплоя;
+- ежедневные согласованные backup PostgreSQL: `pg_dump` → зашифрованный Restic repository в отдельном private S3 bucket;
+- валидация дампа до загрузки, retention до четырёх snapshot и мониторинг выполнения через PingZen Heartbeat.
+
+Параметры production-деплоя, backup и процедуры восстановления описаны в
+[руководстве по эксплуатации](./docs/deployment.md).
 
 ## Интеграции
 

@@ -2,6 +2,7 @@
 .env.*
 !.env.template
 !.env.prod.template
+!.env.backup.template
 !frontend/light-task-frontend/.env.template
 .codex
 .idea/

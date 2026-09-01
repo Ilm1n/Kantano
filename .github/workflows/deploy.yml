@@ -91,6 +91,11 @@ jobs:
           S3_ACCESS: ${{ secrets.S3_ACCESS_KEY }}
           S3_SECRET: ${{ secrets.S3_SECRET_KEY }}
           S3_BUCKET: ${{ vars.S3_BUCKET_NAME }}
+          BACKUP_S3_ACCESS: ${{ secrets.BACKUP_S3_ACCESS_KEY }}
+          BACKUP_S3_SECRET: ${{ secrets.BACKUP_S3_SECRET_KEY }}
+          BACKUP_S3_BUCKET: ${{ vars.BACKUP_S3_BUCKET_NAME }}
+          RESTIC_PASSWORD: ${{ secrets.RESTIC_PASSWORD }}
+          BACKUP_PINGZEN_URL: ${{ secrets.BACKUP_PINGZEN_URL }}
           OWNER: ${{ needs.prepare.outputs.image_repo_owner }}
           JWT_PRIVATE: ${{ secrets.JWT_PRIVATE_KEY }}
           JWT_PUBLIC: ${{ secrets.JWT_PUBLIC_KEY }}
@@ -126,6 +131,15 @@ jobs:
           IMAGE_TAG=$TAG
           SWAGGER_HASH='$SWAGGER_HASH'
           EOF
+
+          cat <<EOF > .env.backup
+          AWS_ACCESS_KEY_ID=$BACKUP_S3_ACCESS
+          AWS_SECRET_ACCESS_KEY=$BACKUP_S3_SECRET
+          AWS_DEFAULT_REGION=ru1
+          RESTIC_REPOSITORY=s3:https://s3.ru1.storage.beget.cloud/$BACKUP_S3_BUCKET/kantano-db
+          RESTIC_PASSWORD=$RESTIC_PASSWORD
+          BACKUP_PINGZEN_URL=$BACKUP_PINGZEN_URL
+          EOF
           
           mkdir -p certs
           printf "%s" "$JWT_PRIVATE" > certs/jwt-private.pem
@@ -137,7 +151,7 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_KEY }}
-          source: "docker-compose.prod.yml,.env.prod,Caddyfile,rabbitmq.conf,certs/"
+          source: "docker-compose.prod.yml,.env.prod,.env.backup,Caddyfile,rabbitmq.conf,certs/,scripts/backup-db.sh"
           target: "/home/${{ secrets.VPS_USER }}/app"
 
       - name: Deploy via SSH
@@ -180,10 +194,12 @@ jobs:
 
             cd ~/app
             if [ -f .env.prod ]; then mv .env.prod .env; fi
-            chmod 600 certs/*.pem
+            chmod 600 certs/*.pem .env.backup
+            chmod 700 scripts/backup-db.sh
 
             retry 5 10 docker_login_ghcr
             retry 5 15 pull_images
+            retry 5 15 docker pull restic/restic:0.19.1
 
             if ! docker compose -f docker-compose.prod.yml up -d --force-recreate --remove-orphans --wait --wait-timeout 180; then
               docker compose -f docker-compose.prod.yml ps --all
@@ -191,7 +207,45 @@ jobs:
               exit 1
             fi
 
+            run_restic() {
+              docker run --rm --env-file .env.backup restic/restic:0.19.1 "$@"
+            }
+
+            if ! run_restic cat config >/dev/null 2>&1; then
+              run_restic init
+            fi
+
+            if ! command -v crontab >/dev/null || ! command -v logger >/dev/null; then
+              echo "cron and logger must be installed on the VPS to schedule database backups." >&2
+              exit 1
+            fi
+
+            if ! systemctl is-active --quiet cron && ! systemctl is-active --quiet crond; then
+              echo "The cron service is not active on the VPS." >&2
+              exit 1
+            fi
+
+            server_timezone="$(timedatectl show --property=Timezone --value 2>/dev/null || cat /etc/timezone)"
+            case "$server_timezone" in
+              UTC|Etc/UTC)
+                backup_cron_time="15 0"
+                ;;
+              Europe/Moscow)
+                backup_cron_time="15 3"
+                ;;
+              *)
+                echo "Unsupported server timezone for the database backup schedule: $server_timezone" >&2
+                exit 1
+                ;;
+            esac
+
+            cron_marker="# kantano-db-backup"
+            app_dir="$(pwd)"
+            cron_entry="$backup_cron_time * * * $app_dir/scripts/backup-db.sh 2>&1 | /usr/bin/logger -t kantano-backup $cron_marker"
+            (crontab -l 2>/dev/null | grep -Fv "$cron_marker" || true; printf '%s\n' "$cron_entry") | crontab -
+
             docker image prune -af --filter "until=24h"
+            retry 5 15 docker pull restic/restic:0.19.1
 
   cleanup:
     name: Cleanup Registry
