@@ -23,14 +23,12 @@ log() {
 }
 
 ping_pingzen() {
-    local suffix="$1"
-
     if [[ -z "${pingzen_url}" ]]; then
         return
     fi
 
     if ! curl --fail --silent --show-error --retry 3 --max-time 15 \
-        "${pingzen_url}${suffix}" >/dev/null; then
+        "${pingzen_url}" >/dev/null; then
         log "PingZen signal failed; backup result is still preserved locally."
     fi
 }
@@ -44,10 +42,9 @@ cleanup() {
     fi
 
     if [[ ${exit_status} -eq 0 ]]; then
-        ping_pingzen "/success"
+        ping_pingzen
         log "Database backup completed successfully."
     else
-        ping_pingzen "/fail"
         log "Database backup failed with exit status ${exit_status}."
     fi
 
@@ -103,7 +100,6 @@ main() {
     fi
 
     trap cleanup EXIT
-    ping_pingzen "/start"
 
     cd "${APP_DIR}"
     docker compose -f "${COMPOSE_FILE}" exec -T db pg_isready -U lighttask_user -d lighttask
