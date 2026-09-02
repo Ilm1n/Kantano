@@ -152,6 +152,7 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_KEY }}
+          passphrase: ${{ secrets.VPS_PASSPHRASE }}
           source: "docker-compose.prod.yml,.env.prod,.env.backup,Caddyfile,rabbitmq.conf,certs/,scripts/backup-db.sh"
           target: "/home/${{ secrets.VPS_USER }}/app"
 
@@ -164,6 +165,7 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_KEY }}
+          passphrase: ${{ secrets.VPS_PASSPHRASE }}
           envs: GITHUB_TOKEN,ACTOR
           script: |
             set -e
