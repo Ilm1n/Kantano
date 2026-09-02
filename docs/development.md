@@ -43,7 +43,8 @@ pnpm dev
 | Frontend | `http://localhost:5173` |
 | API | `http://localhost:8000/api` |
 | Swagger UI | `http://localhost:8000/docs` |
-| Health check | `http://localhost:8000/api/health` |
+| Liveness | `http://localhost:8000/api/health` |
+| Readiness (PostgreSQL) | `http://localhost:8000/api/health/ready` |
 | PostgreSQL | `localhost:5432` |
 | Redis | `localhost:6379` |
 

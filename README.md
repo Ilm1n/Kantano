@@ -78,7 +78,7 @@ access token через backend и повторно подключает WebSock
 ## Эксплуатация
 
 - CI/CD в GitHub Actions: сборка и публикация образов в GHCR, деплой на VPS через Docker Compose;
-- TLS termination и reverse proxy на Caddy; health check приложения после деплоя;
+- TLS termination и reverse proxy на Caddy; liveness/readiness-проверки приложения после деплоя;
 - ежедневные согласованные backup PostgreSQL: `pg_dump` → зашифрованный Restic repository в отдельном private S3 bucket;
 - валидация дампа до загрузки, retention до четырёх snapshot и мониторинг выполнения через PingZen Heartbeat.
 
@@ -117,7 +117,8 @@ outbox publisher, применит миграции и подготовит ло
 
 - API: `http://localhost:8000/api`;
 - Swagger UI: `http://localhost:8000/docs`;
-- health check: `http://localhost:8000/api/health`.
+- liveness: `http://localhost:8000/api/health`;
+- readiness (проверка PostgreSQL): `http://localhost:8000/api/health/ready`.
 
 Yandex OAuth и внешнее S3-хранилище для локальной разработки необязательны.
 

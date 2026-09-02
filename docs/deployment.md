@@ -94,8 +94,8 @@ Workflow `deploy.yml` создаёт repository Restic при первом де�
 ### Мониторинг backup
 
 Выполнение backup контролируется PingZen Heartbeat с интервалом `24 hours` и grace period
-`2 hours`. `BACKUP_PINGZEN_URL` содержит базовый endpoint; скрипт передаёт сигналы
-`/start`, `/success` и `/fail`.
+`2 hours`. `BACKUP_PINGZEN_URL` содержит базовый endpoint; скрипт вызывает его только
+после успешного завершения backup.
 
 ### Операционные команды
 
@@ -151,7 +151,8 @@ docker compose -f docker-compose.prod.yml up -d --force-recreate --remove-orphan
 
 Одноразовый сервис `migrations` ждёт PostgreSQL и выполняет `alembic upgrade head` до
 запуска API, Celery worker и outbox publisher.
-Успешность деплоя контролируется endpoint'ом `/api/health`.
+`/api/health` — liveness endpoint backend. `/api/health/ready` выполняет `SELECT 1` в
+PostgreSQL и используется Docker Compose для проверки готовности backend при деплое.
 
 RabbitMQ использует отдельный vhost `kantano`, durable quorum-очередь
 `email_verification` и publisher confirms. Это устраняет зависимость Celery от

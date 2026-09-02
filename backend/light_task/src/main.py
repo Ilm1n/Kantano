@@ -2,10 +2,12 @@
 from contextlib import asynccontextmanager
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, ORJSONResponse
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 
 from src.auth.router import router as auth_router
 
@@ -109,6 +111,21 @@ async def unhandled_exception_handler(_: Request, exc: Exception) -> JSONRespons
 
 @main_app.get("/api/health")
 async def health_check():
+    return {"status": "ok"}
+
+
+@main_app.get("/api/health/ready")
+async def readiness_check():
+    try:
+        async with db_helper.engine.connect() as connection:
+            await connection.execute(text("SELECT 1"))
+    except SQLAlchemyError as exc:
+        logger.warning("Database readiness check failed: %s", exc)
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={"status": "unavailable"},
+        )
+
     return {"status": "ok"}
 
 
