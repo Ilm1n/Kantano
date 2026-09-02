@@ -34,3 +34,4 @@ postgres_data_dev/
 postgres_data_prod/
 
 tmp/
+.tmp/
