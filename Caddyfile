@@ -1,4 +1,4 @@
-do-coop.ru, www.do-coop.ru, www.kantano.ru {
+www.kantano.ru {
     redir https://kantano.ru{uri} permanent
 }
 
