@@ -147,7 +147,7 @@ Python 3.12 и `uv`, Node.js 24, pnpm 9 или 10 и OpenSSL.
 ### 1. Настройте проект
 
 ```bash
-task setup
+task setup  # создать локальные env/JWT-ключи и установить зависимости
 ```
 
 Команда создаёт отсутствующие локальные env-файлы и JWT-ключи, устанавливает backend и
@@ -157,7 +157,7 @@ frontend зависимости и настраивает pre-commit hooks. Су
 ### 2. Запустите приложение
 
 ```bash
-task dev
+task dev  # поднять backend-инфраструктуру и запустить frontend
 ```
 
 Task поднимет PostgreSQL, Redis, RabbitMQ, backend, Celery worker и outbox publisher в
@@ -186,15 +186,15 @@ Yandex OAuth и внешнее S3-хранилище для локальной �
 ## Проверки
 
 ```bash
-task check
+task check  # выполнить lint, typecheck, проверки конфигов, все тесты и frontend build
 ```
 
 Для целевых прогонов:
 
 ```bash
-task test:backend:unit
-task test:backend
-task test:frontend
+task test:backend:unit  # быстрые unit-тесты backend без Docker
+task test:backend       # полный набор backend-тестов с тестовыми контейнерами
+task test:frontend      # frontend-тесты Vitest
 ```
 
 Тесты backend по умолчанию используют отдельные PostgreSQL, Redis и RabbitMQ из

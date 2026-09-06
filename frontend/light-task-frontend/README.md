@@ -32,8 +32,8 @@ WebSocket-каналы.
 Понадобятся Node.js 24 и pnpm 9 или 10. Из корня репозитория:
 
 ```bash
-task setup
-task dev
+task setup  # подготовить весь проект и установить зависимости
+task dev    # поднять backend-инфраструктуру и запустить frontend
 ```
 
 Frontend откроется на `http://localhost:5173`. При пустом `VITE_API_URL` Vite
@@ -60,7 +60,7 @@ pnpm gen:api          # генерация клиента из openapi.json
 После изменений backend-контракта сначала экспортируйте OpenAPI:
 
 ```bash
-task api:generate
+task api:generate  # экспортировать OpenAPI и обновить TypeScript-клиент
 ```
 
 Каталог `src/api/client` генерируется из `openapi.json`, поэтому ручные изменения в нём

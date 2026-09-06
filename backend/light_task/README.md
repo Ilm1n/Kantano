@@ -45,8 +45,8 @@ Prometheus-метрики и OpenTelemetry traces с общими `request_id` �
 Основной development-режим запускается из корня репозитория:
 
 ```bash
-task setup
-task dev
+task setup  # подготовить конфигурацию, ключи, зависимости и pre-commit hooks
+task dev    # поднять backend-инфраструктуру и запустить frontend
 ```
 
 Для запуска backend непосредственно на хосте:
@@ -72,8 +72,8 @@ Backend использует Python 3.12. Конфигурация загруж�
 ## Проверки
 
 ```bash
-task test:backend:unit
-task test:backend
+task test:backend:unit  # unit-тесты backend без Docker
+task test:backend       # полный pytest-набор с тестовыми контейнерами
 ```
 
 Полный pytest-набор использует отдельные PostgreSQL, Redis и RabbitMQ из
@@ -88,7 +88,7 @@ task test:backend
 Frontend-контракт нужно обновлять после изменений API:
 
 ```bash
-task api:generate
+task api:generate  # экспортировать OpenAPI и обновить TypeScript-клиент
 ```
 
 Миграции находятся в `alembic/versions` и применяются командой `task db:migrate`.
