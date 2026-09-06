@@ -119,7 +119,7 @@ Worker повторяет временные сетевые ошибки, `429` 
 Redis в этом процессе используется только для ограничения частоты запросов; брокером
 Celery служит RabbitMQ.
 
-## Наблюдаемость
+## Observability
 
 ```mermaid
 flowchart LR
@@ -129,7 +129,7 @@ flowchart LR
     app -->|"errors"| sentry["Sentry"]
 ```
 
-Наблюдаемость реализована как сквозной инфраструктурный слой и не участвует в принятии
+Observability реализована как сквозной инфраструктурный слой и не участвует в принятии
 бизнес-решений. FastAPI, outbox publisher и Celery worker используют общую настройку
 структурированных логов, Prometheus metrics и OpenTelemetry tracing. Контекст trace
 сохраняется в transactional outbox и передаётся в RabbitMQ вместе с Celery message,
@@ -139,7 +139,7 @@ Grafana Alloy собирает сигналы приложения и exporters 
 Linux и Docker. В production данные отправляются в Grafana Cloud Metrics, Logs и Traces;
 ошибки backend-процессов дополнительно регистрируются в Sentry. Отказ telemetry pipeline
 не изменяет результат application transaction. Подробная схема и эксплуатационные
-процедуры приведены в [руководстве по наблюдаемости](./observability.md).
+процедуры приведены в [руководстве по Observability](./observability.md).
 
 ## Внешние интеграции
 
