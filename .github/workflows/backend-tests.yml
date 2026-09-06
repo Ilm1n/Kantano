@@ -149,6 +149,7 @@ jobs:
           LIGHTTASK_CONFIG__QUEUE__USER: test
           LIGHTTASK_CONFIG__QUEUE__PASSWORD: test
         run: |
+          cp .env.template .env
           cp .env.backend.template .env.backend
           cp .env.gateway.template .env.gateway
           cp .env.alloy.template .env.alloy
