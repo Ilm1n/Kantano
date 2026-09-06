@@ -14,6 +14,7 @@ Kantano - веб-приложение для совместной работы �
 - [Архитектура](#архитектура)
 - [Стек](#стек)
 - [Эксплуатация](#эксплуатация)
+- [Observability](#Observability)
 - [Интеграции](#интеграции)
 - [Возможности](#возможности)
 - [Проверки](#проверки)
@@ -33,7 +34,7 @@ Kantano - веб-приложение для совместной работы �
 ## Архитектура
 
 ```mermaid
-flowchart LR
+flowchart TB
     browser["Vue SPA"] -->|"REST /api/*"| gateway["Caddy"]
     browser -->|"WebSocket /ws/*"| gateway
     gateway --> api["FastAPI"]
@@ -73,17 +74,52 @@ access token через backend и повторно подключает WebSock
 | Данные | PostgreSQL 15, Redis 7, RabbitMQ 4, local/S3-compatible storage |
 | Фоновые задачи | Celery, transactional outbox, email gateway |
 | Тестирование | pytest, pytest-asyncio, Vitest, Vue Test Utils |
+| Observability | OpenTelemetry, Grafana Alloy, Prometheus, Loki, Tempo, Grafana Cloud, Sentry |
 | Инфраструктура | Docker Compose, Caddy, GitHub Actions, GHCR |
 
 ## Эксплуатация
 
 - CI/CD в GitHub Actions: сборка и публикация образов в GHCR, деплой на VPS через Docker Compose;
 - TLS termination и reverse proxy на Caddy; liveness/readiness-проверки приложения после деплоя;
+- единый telemetry pipeline для API, фоновых процессов, инфраструктуры и внешних зависимостей;
 - ежедневные согласованные backup PostgreSQL: `pg_dump` → зашифрованный Restic repository в отдельном private S3 bucket;
 - валидация дампа до загрузки, retention до четырёх snapshot и мониторинг выполнения через PingZen Heartbeat.
 
 Параметры production-деплоя, backup и процедуры восстановления описаны в
 [руководстве по эксплуатации](./docs/deployment.md).
+
+## Observability
+
+```mermaid
+flowchart LR
+    services["FastAPI / publisher / Celery"] -->|"logs · metrics · traces"| alloy["Grafana Alloy"]
+    infrastructure["Host / containers / dependencies"] -->|"metrics"| alloy
+    alloy --> cloud["Grafana Cloud"]
+    services -->|"errors"| sentry["Sentry"]
+```
+
+FastAPI, outbox publisher и Celery worker формируют структурированные JSON-логи,
+Prometheus-метрики и OpenTelemetry traces. Grafana Alloy объединяет прикладные сигналы с
+метриками Linux, Docker, PostgreSQL, Redis и RabbitMQ и отправляет их в Grafana Cloud.
+Sentry используется отдельно для backend errors, без дублирования log и trace pipeline.
+
+Контекст запроса сохраняется при переходе через transactional outbox, RabbitMQ и Celery.
+По `request_id` из HTTP-ответа можно найти access log, перейти к полному Tempo trace и
+сопоставить ошибку с Sentry event. Labels ограничены стабильными значениями: route
+template, service, environment и тип результата; пользовательские идентификаторы в
+metrics labels не попадают.
+
+В Grafana подготовлены три dashboard:
+
+- API: request rate, статусы, error ratio, latency и состояние database pool;
+- background и realtime: outbox, publisher, Celery, RabbitMQ и WebSocket;
+- infrastructure: host/container resources, зависимости и состояние telemetry export.
+
+Production alerts контролируют доступность компонентов, 5xx и latency, фоновые очереди,
+ресурсы VPS, OOM, сбои экспорта и квоту Grafana Cloud. Локально тот же контур запускается
+на Prometheus, Loki, Tempo и Grafana через отдельный Compose overlay. Архитектура,
+dashboards, метрики и сценарии диагностики описаны в
+[руководстве по Observability](./docs/observability.md).
 
 ## Интеграции
 
@@ -121,6 +157,9 @@ outbox publisher, применит миграции и подготовит ло
 - readiness (проверка PostgreSQL): `http://localhost:8000/api/health/ready`.
 
 Yandex OAuth и внешнее S3-хранилище для локальной разработки необязательны.
+Локальный Grafana stack подключается отдельным
+[`docker-compose.observability.yml`](./docker-compose.observability.yml); команды запуска
+и адреса интерфейсов приведены в [руководстве по Observability](./docs/observability.md).
 
 ### 2. Запустите frontend
 
@@ -171,5 +210,6 @@ pnpm build
 - [Локальная разработка](./docs/development.md)
 - [Тестирование](./docs/testing.md)
 - [Деплой и эксплуатация](./docs/deployment.md)
+- [Observability и диагностика](./docs/observability.md)
 - [Backend](./backend/light_task/README.md)
 - [Frontend](./frontend/light-task-frontend/README.md)

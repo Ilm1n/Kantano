@@ -32,7 +32,7 @@ uv run pytest -q
 docker compose -f docker-compose.test.yml down
 ```
 
-Тестовый Compose использует PostgreSQL на `55432`, Redis на `56379` с индексом `/15`
+Тестовый Compose использует PostgreSQL на `55432`, Redis на `16379` с индексом `/15`
 и RabbitMQ на `55672`. `tests/conftest.py` применяет миграции, очищает состояние между
 тестами и отказывается запускать integration tests против БД без `test` в имени или
 Redis DB 0. Вызовы внешнего email API выполняются через `httpx.MockTransport`; реальный

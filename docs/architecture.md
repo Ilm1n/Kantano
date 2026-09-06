@@ -5,7 +5,7 @@ Caddy раздаёт собранный frontend, завершает TLS и пр
 backend.
 
 ```mermaid
-flowchart TD
+flowchart TB
     client["Browser / Vue SPA"]
     gateway["Caddy gateway"]
     api["FastAPI application"]
@@ -118,6 +118,28 @@ Worker повторяет временные сетевые ошибки, `429` 
 `Idempotency-Key` не даёт повторной доставке одной задачи создать второе письмо.
 Redis в этом процессе используется только для ограничения частоты запросов; брокером
 Celery служит RabbitMQ.
+
+## Наблюдаемость
+
+```mermaid
+flowchart LR
+    app["FastAPI / publisher / Celery"] -->|"logs · metrics · traces"| alloy["Grafana Alloy"]
+    infra["Host / containers / dependencies"] -->|"metrics"| alloy
+    alloy --> cloud["Grafana Cloud"]
+    app -->|"errors"| sentry["Sentry"]
+```
+
+Наблюдаемость реализована как сквозной инфраструктурный слой и не участвует в принятии
+бизнес-решений. FastAPI, outbox publisher и Celery worker используют общую настройку
+структурированных логов, Prometheus metrics и OpenTelemetry tracing. Контекст trace
+сохраняется в transactional outbox и передаётся в RabbitMQ вместе с Celery message,
+поэтому фоновая отправка письма остаётся частью исходного HTTP trace.
+
+Grafana Alloy собирает сигналы приложения и exporters PostgreSQL, Redis, RabbitMQ,
+Linux и Docker. В production данные отправляются в Grafana Cloud Metrics, Logs и Traces;
+ошибки backend-процессов дополнительно регистрируются в Sentry. Отказ telemetry pipeline
+не изменяет результат application transaction. Подробная схема и эксплуатационные
+процедуры приведены в [руководстве по наблюдаемости](./observability.md).
 
 ## Внешние интеграции
 

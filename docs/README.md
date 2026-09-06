@@ -9,6 +9,7 @@
 | [Локальная разработка](./development.md) | Окружение, почтовый провайдер, запуск сервисов, миграции и генерация API-клиента |
 | [Тестирование](./testing.md) | Backend/frontend проверки, PostgreSQL, Redis, RabbitMQ и CI |
 | [Деплой](./deployment.md) | Production Compose, GitHub Actions, секреты и проверка после запуска |
+| [Observability](./observability.md) | Архитектура telemetry pipeline, логи, трассы, метрики, dashboards, alerts и диагностика |
 
 README отдельных приложений описывают только контекст соответствующего пакета:
 
@@ -23,4 +24,5 @@ README отдельных приложений описывают только �
 - frontend-скрипты и зависимости - `package.json`;
 - сервисы и сценарии запуска - `docker-compose.*.yml`;
 - CI/CD - файлы в `.github/workflows/`;
+- observability stack - `observability/` и `docker-compose.observability.yml`;
 - схема данных - SQLAlchemy models и цепочка Alembic migrations.
