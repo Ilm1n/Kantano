@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.db.unit_of_work import UnitOfWork
 from src.errors import ErrorCode
 from src.logger import user_logger
+from src.observability.tracing import get_tracer
 from src.shared.errors import (
     AppError,
     BadRequestError,
@@ -29,6 +30,8 @@ from src.users.models import User
 from src.users.passwords import hash_password, validate_password
 from src.users.repository import UserRepository
 from src.users.storage import AvatarStorageError, AvatarStorageGateway
+
+tracer = get_tracer(__name__)
 
 
 class GetUserUseCase:
@@ -147,6 +150,13 @@ class UploadAvatarUseCase:
         )
 
     async def execute(self, command: UploadAvatarCommand) -> AvatarMutationResult:
+        with tracer.start_as_current_span(
+            "users.avatar.upload",
+            attributes={"user.id": command.user_id},
+        ):
+            return await self._execute(command)
+
+    async def _execute(self, command: UploadAvatarCommand) -> AvatarMutationResult:
         try:
             async with self._uow_factory() as uow:
                 if uow.session is None:

@@ -5,6 +5,7 @@ import contextlib
 
 from src.config import settings
 from src.logger import get_logger
+from src.observability.tracing import get_tracer, mark_current_span_error
 from src.projects.constants import ProjectRole
 from src.realtimev1.connection_manager import ConnectionManager
 from src.realtimev1.event_bus import EventBus
@@ -20,6 +21,7 @@ from src.realtimev1.presence import PresenceService
 from src.realtimev1.redis_event_bus import RedisEventBus
 
 logger = get_logger("src.realtimev1.runtime")
+tracer = get_tracer(__name__)
 
 
 class RealtimeRuntime:
@@ -86,6 +88,24 @@ class RealtimeRuntime:
         await self.consume(message)
 
     async def consume(self, message: RealtimeDeliveryMessage) -> None:
+        if message.envelope.event_type == RealtimeEventType.TASK_PRESENCE_SYNC:
+            await self._deliver(message)
+            return
+
+        with tracer.start_as_current_span(
+            "realtime.deliver",
+            attributes={
+                "realtime.event_type": str(message.envelope.event_type),
+                "realtime.scope": str(message.envelope.scope),
+            },
+        ):
+            try:
+                await self._deliver(message)
+            except Exception as exc:
+                mark_current_span_error(exc)
+                raise
+
+    async def _deliver(self, message: RealtimeDeliveryMessage) -> None:
         await self.connections.dispatch(message)
         await self._apply_internal_side_effects(message)
 

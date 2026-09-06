@@ -1,0 +1,178 @@
+logging {
+  level  = "info"
+  format = "json"
+}
+
+discovery.docker "containers" {
+  host = "unix:///var/run/docker.sock"
+}
+
+discovery.relabel "container_logs" {
+  targets = discovery.docker.containers.targets
+
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_project"]
+    regex         = "lighttask_dev"
+    action        = "keep"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    regex         = "(local-storage-init|jwt-certs-init|migrations|postgres-monitoring-init|grafana-provision)"
+    action        = "drop"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "container"
+  }
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "service"
+  }
+  rule {
+    target_label = "environment"
+    replacement  = "local"
+  }
+}
+
+loki.source.docker "containers" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = discovery.relabel.container_logs.output
+  forward_to = [loki.process.application.receiver]
+}
+
+loki.process "application" {
+  stage.json {
+    expressions = {
+      service     = "service",
+      environment = "environment",
+      level       = "level",
+    }
+  }
+  stage.labels {
+    values = {
+      service     = "",
+      environment = "",
+      level       = "",
+    }
+  }
+  forward_to = [loki.write.local.receiver]
+}
+
+loki.write "local" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}
+
+prometheus.exporter.unix "host" {
+  rootfs_path = "/host/root"
+  procfs_path = "/host/proc"
+  sysfs_path  = "/host/sys"
+}
+
+prometheus.exporter.postgres "database" {
+  data_source_names = [sys.env("POSTGRES_MONITOR_DSN")]
+}
+
+prometheus.exporter.redis "cache" {
+  redis_addr = "redis://redis:6379"
+}
+
+prometheus.exporter.cadvisor "containers" {
+  docker_host = "unix:///var/run/docker.sock"
+}
+
+prometheus.scrape "application" {
+  targets = [
+    { "__address__" = "backend:8000", "job" = "kantano-api", "environment" = "local" },
+    { "__address__" = "outbox-publisher:9101", "job" = "kantano-outbox-publisher", "environment" = "local" },
+    { "__address__" = "celery-worker:9101", "job" = "kantano-celery-worker", "environment" = "local" },
+  ]
+  scrape_interval = "30s"
+  scrape_timeout  = "10s"
+  forward_to      = [prometheus.remote_write.local.receiver]
+}
+
+prometheus.scrape "infrastructure" {
+  targets = array.concat(
+    prometheus.exporter.unix.host.targets,
+    prometheus.exporter.postgres.database.targets,
+    prometheus.exporter.redis.cache.targets,
+    prometheus.exporter.cadvisor.containers.targets,
+    [
+      { "__address__" = "rabbitmq:15692", "job" = "rabbitmq", "environment" = "local" },
+      { "__address__" = "alloy:12345", "job" = "alloy", "environment" = "local" },
+    ],
+  )
+  scrape_interval = "60s"
+  scrape_timeout  = "10s"
+  forward_to      = [prometheus.relabel.infrastructure_environment.receiver]
+}
+
+prometheus.relabel "infrastructure_environment" {
+  rule {
+    target_label = "environment"
+    replacement  = "local"
+  }
+  forward_to = [prometheus.remote_write.local.receiver]
+}
+
+prometheus.remote_write "local" {
+  wal {
+    truncate_frequency = "1h"
+    max_keepalive_time = "1h"
+  }
+  endpoint {
+    url = "http://prometheus:9090/api/v1/write"
+    queue_config {
+      capacity             = 2500
+      max_shards           = 4
+      max_samples_per_send = 1000
+    }
+  }
+}
+
+otelcol.receiver.otlp "application" {
+  http {
+    endpoint = "0.0.0.0:4318"
+  }
+  output {
+    traces = [otelcol.processor.memory_limiter.traces.input]
+  }
+}
+
+otelcol.processor.memory_limiter "traces" {
+  check_interval = "1s"
+  limit          = "320MiB"
+  spike_limit    = "64MiB"
+  output {
+    traces = [otelcol.processor.batch.traces.input]
+  }
+}
+
+otelcol.processor.batch "traces" {
+  timeout         = "5s"
+  send_batch_size = 256
+  output {
+    traces = [otelcol.exporter.otlphttp.local.input]
+  }
+}
+
+otelcol.exporter.otlphttp "local" {
+  client {
+    endpoint = "http://tempo:4318"
+    timeout  = "5s"
+  }
+  retry_on_failure {
+    enabled          = true
+    max_elapsed_time = "60s"
+  }
+  sending_queue {
+    enabled       = true
+    queue_size    = 1024
+    num_consumers = 2
+  }
+}

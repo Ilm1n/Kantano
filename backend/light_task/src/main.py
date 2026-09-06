@@ -19,7 +19,11 @@ from src.db.database import db_helper
 from src.errors import ErrorCode, error_response, normalize_error_detail
 from src.invitations.models import ProjectInvitation  # noqa: F401
 from src.invitations.router import router as invitation_router
-from src.logger import get_logger, setup_logging
+from src.logger import get_logger
+from src.observability import initialize_observability
+from src.observability.middleware import AccessLogMiddleware, RequestContextMiddleware
+from src.observability.sentry import capture_exception_once
+from src.observability.tracing import mark_current_span_error
 from src.projects.models import Project, ProjectMember  # noqa: F401
 from src.projects.router import router as project_router
 from src.registration.models import OutboxEvent, PendingRegistration  # noqa: F401
@@ -33,12 +37,12 @@ from src.users.models import User  # noqa: F401
 from src.users.router import router as user_router
 
 logger = get_logger(__name__)
+observability = initialize_observability(settings.observability)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # startup
-    setup_logging()
     app.state.realtime_runtime = build_realtime_runtime()
     await app.state.realtime_runtime.start()
     logger.info("Application startup")
@@ -47,6 +51,7 @@ async def lifespan(app: FastAPI):
     logger.info("Application shutdown")
     await app.state.realtime_runtime.stop()
     await db_helper.dispose()
+    observability.shutdown()
 
 
 main_app = FastAPI(
@@ -63,7 +68,6 @@ main_app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 if settings.s3.backend == "local":
     settings.s3.local_storage_dir.mkdir(parents=True, exist_ok=True)
     main_app.mount(
@@ -80,6 +84,9 @@ main_app.include_router(board_router, prefix="/api")
 main_app.include_router(tag_router, prefix="/api")
 main_app.include_router(invitation_router, prefix="/api")
 main_app.include_router(realtime_router)
+main_app.add_middleware(AccessLogMiddleware)
+observability.instrument_sqlalchemy(db_helper.engine.sync_engine)
+observability.instrument_fastapi(main_app)
 
 
 @main_app.exception_handler(HTTPException)
@@ -93,6 +100,9 @@ async def http_exception_handler(_: Request, exc: HTTPException) -> JSONResponse
 
 @main_app.exception_handler(AppError)
 async def app_error_handler(_: Request, exc: AppError) -> JSONResponse:
+    if exc.status_code >= 500:
+        mark_current_span_error(exc)
+        capture_exception_once(exc)
     return JSONResponse(
         status_code=exc.status_code,
         content=error_response(exc.code, params=exc.params),
@@ -102,6 +112,9 @@ async def app_error_handler(_: Request, exc: AppError) -> JSONResponse:
 
 @main_app.exception_handler(Exception)
 async def unhandled_exception_handler(_: Request, exc: Exception) -> JSONResponse:
+    mark_current_span_error(exc)
+    # Sentry's Starlette/FastAPI integration captures exceptions that reach
+    # ServerErrorMiddleware.
     logger.error("Unhandled exception", exc_info=exc)
     return JSONResponse(
         status_code=500,
@@ -127,6 +140,11 @@ async def readiness_check():
         )
 
     return {"status": "ok"}
+
+
+# The correlation middleware must wrap Starlette's ServerErrorMiddleware so that
+# even responses produced for otherwise unhandled exceptions carry X-Request-ID.
+main_app = RequestContextMiddleware(main_app)
 
 
 if __name__ == "__main__":

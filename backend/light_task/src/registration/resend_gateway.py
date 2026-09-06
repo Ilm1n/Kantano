@@ -65,5 +65,6 @@ class ResendGateway:
             raise TransientEmailGatewayError() from exc
 
         if response.status_code == 429 or response.status_code >= 500:
-            raise TransientEmailGatewayError(response.text)
+            # Provider responses may echo email content or verification tokens.
+            raise TransientEmailGatewayError(f"Email provider returned HTTP {response.status_code}")
         response.raise_for_status()

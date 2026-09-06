@@ -1,0 +1,306 @@
+name: lighttask_dev
+
+services:
+  rabbitmq:
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  redis:
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  db:
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  local-storage-init:
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  jwt-certs-init:
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  migrations:
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  backend:
+    environment:
+      LIGHTTASK_CONFIG__OBSERVABILITY__ENVIRONMENT: local
+      LIGHTTASK_CONFIG__OBSERVABILITY__SERVICE_NAME: kantano-api
+      LIGHTTASK_CONFIG__OBSERVABILITY__VERSION: dev
+      LIGHTTASK_CONFIG__OBSERVABILITY__LOG_FORMAT: json
+      LIGHTTASK_CONFIG__OBSERVABILITY__TRACING_ENABLED: "true"
+      LIGHTTASK_CONFIG__OBSERVABILITY__METRICS_ENABLED: "true"
+      LIGHTTASK_CONFIG__OBSERVABILITY__OTLP_ENDPOINT: http://alloy:4318/v1/traces
+    depends_on:
+      alloy:
+        condition: service_started
+    stop_grace_period: 20s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  celery-worker:
+    environment:
+      LIGHTTASK_CONFIG__OBSERVABILITY__ENVIRONMENT: local
+      LIGHTTASK_CONFIG__OBSERVABILITY__SERVICE_NAME: kantano-celery-worker
+      LIGHTTASK_CONFIG__OBSERVABILITY__VERSION: dev
+      LIGHTTASK_CONFIG__OBSERVABILITY__LOG_FORMAT: json
+      LIGHTTASK_CONFIG__OBSERVABILITY__TRACING_ENABLED: "true"
+      LIGHTTASK_CONFIG__OBSERVABILITY__METRICS_ENABLED: "true"
+      LIGHTTASK_CONFIG__OBSERVABILITY__OTLP_ENDPOINT: http://alloy:4318/v1/traces
+    depends_on:
+      alloy:
+        condition: service_started
+    expose:
+      - "9101"
+    stop_grace_period: 20s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  outbox-publisher:
+    environment:
+      LIGHTTASK_CONFIG__OBSERVABILITY__ENVIRONMENT: local
+      LIGHTTASK_CONFIG__OBSERVABILITY__SERVICE_NAME: kantano-outbox-publisher
+      LIGHTTASK_CONFIG__OBSERVABILITY__VERSION: dev
+      LIGHTTASK_CONFIG__OBSERVABILITY__LOG_FORMAT: json
+      LIGHTTASK_CONFIG__OBSERVABILITY__TRACING_ENABLED: "true"
+      LIGHTTASK_CONFIG__OBSERVABILITY__METRICS_ENABLED: "true"
+      LIGHTTASK_CONFIG__OBSERVABILITY__OTLP_ENDPOINT: http://alloy:4318/v1/traces
+    depends_on:
+      alloy:
+        condition: service_started
+    expose:
+      - "9101"
+    stop_grace_period: 20s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  postgres-monitoring-init:
+    image: postgres:15-alpine
+    restart: "no"
+    environment:
+      PGHOST: db
+      PGPORT: 5432
+      PGUSER: ${LIGHTTASK_CONFIG__DB__USER}
+      PGPASSWORD: ${LIGHTTASK_CONFIG__DB__PASSWORD}
+      PGDATABASE: ${LIGHTTASK_CONFIG__DB__NAME}
+      POSTGRES_MONITOR_PASSWORD: ${POSTGRES_MONITOR_PASSWORD:-kantano-monitor-dev}
+    volumes:
+      - ./observability/postgres/init-monitoring.sql:/init-monitoring.sql:ro
+    command:
+      - sh
+      - -ec
+      - psql --set=ON_ERROR_STOP=1 --set=monitor_password="$$POSTGRES_MONITOR_PASSWORD" --file=/init-monitoring.sql
+    depends_on:
+      db:
+        condition: service_healthy
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  alloy:
+    image: grafana/alloy:v1.19.2
+    privileged: true
+    restart: unless-stopped
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --storage.path=/var/lib/alloy/data
+      - /etc/alloy/config.alloy
+    environment:
+      GOMEMLIMIT: 384MiB
+      POSTGRES_MONITOR_DSN: postgresql://kantano_monitor:${POSTGRES_MONITOR_PASSWORD:-kantano-monitor-dev}@db:5432/${LIGHTTASK_CONFIG__DB__NAME}?sslmode=disable
+    volumes:
+      - ./observability/alloy/config.local.alloy:/etc/alloy/config.alloy:ro
+      - alloy_data_local:/var/lib/alloy/data
+      - /:/host/root:ro
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /run/udev/data:/run/udev/data:ro
+      - /:/rootfs:ro
+      - /var/run:/var/run:rw
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+      - /dev/disk:/dev/disk:ro
+    depends_on:
+      postgres-monitoring-init:
+        condition: service_completed_successfully
+      prometheus:
+        condition: service_healthy
+      loki:
+        condition: service_healthy
+      tempo:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:12345:12345"
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=24h
+      - --web.enable-remote-write-receiver
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data_local:/prometheus
+    ports:
+      - "127.0.0.1:9090:9090"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:9090/-/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  loki:
+    image: grafana/loki:3.5.12
+    restart: unless-stopped
+    command: ["-config.file=/etc/loki/loki-config.yml"]
+    volumes:
+      - ./observability/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - loki_data_local:/loki
+    ports:
+      - "127.0.0.1:3100:3100"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:3100/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  tempo:
+    image: grafana/tempo:2.8.4
+    restart: unless-stopped
+    command: ["-config.file=/etc/tempo/tempo.yml"]
+    volumes:
+      - ./observability/tempo/tempo.yml:/etc/tempo/tempo.yml:ro
+      - tempo_data_local:/var/tempo
+    ports:
+      - "127.0.0.1:3200:3200"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:3200/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  grafana:
+    image: grafana/grafana:12.4.10
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_LOCAL_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_LOCAL_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_PLUGINS_PREINSTALL_DISABLED: "true"
+    volumes:
+      - ./observability/grafana/grafana.ini:/etc/grafana/grafana.ini:ro
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data_local:/var/lib/grafana
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      prometheus:
+        condition: service_healthy
+      loki:
+        condition: service_healthy
+      tempo:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost:3000/api/health | grep -q ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  grafana-provision:
+    image: python:3.12-alpine
+    restart: "no"
+    environment:
+      GRAFANA_URL: http://grafana:3000
+      GRAFANA_USER: ${GRAFANA_LOCAL_ADMIN_USER:-admin}
+      GRAFANA_PASSWORD: ${GRAFANA_LOCAL_ADMIN_PASSWORD:-admin}
+      GRAFANA_PROMETHEUS_UID: kantano-prometheus
+      GRAFANA_LOKI_UID: kantano-loki
+      GRAFANA_TEMPO_UID: kantano-tempo
+      GRAFANA_USAGE_UID: kantano-usage
+      PAUSE_ALERTS: "1"
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+    volumes:
+      - ./observability/grafana:/work:ro
+    command: ["python", "/work/apply.py"]
+    depends_on:
+      grafana:
+        condition: service_healthy
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  alloy_data_local:
+  prometheus_data_local:
+  loki_data_local:
+  tempo_data_local:
+  grafana_data_local:

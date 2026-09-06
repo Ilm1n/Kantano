@@ -13,7 +13,7 @@ from src.registration.tasks import _send
 from src.registration.use_cases import hash_token
 
 
-async def _create_event() -> int:
+async def _create_event(trace_context: dict[str, str] | None = None) -> int:
     from src.db.unit_of_work import UnitOfWork
 
     async with UnitOfWork() as uow:
@@ -22,6 +22,7 @@ async def _create_event() -> int:
         event = OutboxEvent(
             event_type="verification_email_requested",
             payload=json.dumps({"pending_registration_id": 7, "token": "test-token"}),
+            trace_context=trace_context,
         )
         uow.session.add(event)
         await uow.session.flush()
@@ -39,7 +40,7 @@ async def _get_event(event_id: int) -> OutboxEvent:
 
 @pytest.mark.asyncio
 async def test_outbox_event_survives_broker_failure_and_retries(monkeypatch) -> None:
-    event_id = await _create_event()
+    event_id = await _create_event({"request_id": "request-outbox"})
 
     def fail_publish(*args, **kwargs) -> None:
         raise ConnectionError("broker unavailable")
@@ -85,7 +86,7 @@ async def test_outbox_event_is_published_to_rabbitmq() -> None:
         queue.declare()
         queue.purge()
 
-    event_id = await _create_event()
+    event_id = await _create_event({"request_id": "request-outbox"})
 
     await publish_once()
 
@@ -103,7 +104,34 @@ async def test_outbox_event_is_published_to_rabbitmq() -> None:
             "pending_registration_id": 7,
             "token": "test-token",
         }
+        assert message.headers["request_id"] == "request-outbox"
+        assert message.headers["outbox_event_id"] == str(event_id)
         message.ack()
+
+
+@pytest.mark.asyncio
+async def test_malformed_outbox_trace_context_does_not_block_publication(monkeypatch) -> None:
+    event_id = await _create_event(
+        {
+            "traceparent": "malformed",
+            "request_id": "request-malformed",
+            "baggage": "must-not-propagate",
+        }
+    )
+    published_headers: dict[str, str | None] = {}
+
+    def publish(*args, **kwargs) -> None:
+        published_headers.update(kwargs["headers"])
+
+    monkeypatch.setattr(celery_app, "send_task", publish)
+    await publish_once()
+
+    event = await _get_event(event_id)
+    assert event.published_at is not None
+    assert published_headers == {
+        "request_id": "request-malformed",
+        "outbox_event_id": str(event_id),
+    }
 
 
 def test_celery_uses_persistent_confirmed_email_queue() -> None:
@@ -118,8 +146,108 @@ def test_celery_uses_persistent_confirmed_email_queue() -> None:
     assert celery_app.conf.task_reject_on_worker_lost is True
     assert celery_app.conf.worker_prefetch_multiplier == 1
     assert celery_app.conf.worker_enable_remote_control is False
+    assert celery_app.conf.worker_hijack_root_logger is False
     assert celery_app.conf.worker_send_task_events is False
     assert celery_app.conf.worker_detect_quorum_queues is True
+
+
+def test_celery_instrumentor_normalizes_kombu_exchange(monkeypatch) -> None:
+    from kombu import Exchange
+    from opentelemetry.instrumentation.celery import CeleryInstrumentor
+
+    from src.observability.celery import KantanoCeleryInstrumentor
+
+    captured: dict[str, object] = {}
+
+    def capture_publish(_self, *args, **kwargs) -> None:
+        captured.update(kwargs)
+
+    monkeypatch.setattr(CeleryInstrumentor, "_trace_before_publish", capture_publish)
+
+    instrumentor = KantanoCeleryInstrumentor()
+    instrumentor._trace_before_publish(exchange=Exchange("email-verification"))
+
+    assert captured["exchange"] == "email-verification"
+
+
+def test_celery_retry_marks_attempt_span_as_error() -> None:
+    from types import SimpleNamespace
+
+    from opentelemetry.instrumentation.celery import utils as celery_utils
+    from opentelemetry.trace import StatusCode
+
+    from src.observability.celery import KantanoCeleryInstrumentor
+
+    class RecordingSpan:
+        def __init__(self) -> None:
+            self.attributes: dict[str, object] = {}
+            self.status = None
+
+        def is_recording(self) -> bool:
+            return True
+
+        def set_attribute(self, key: str, value: object) -> None:
+            self.attributes[key] = value
+
+        def set_status(self, status) -> None:
+            self.status = status
+
+    span = RecordingSpan()
+    task = SimpleNamespace()
+    setattr(task, celery_utils.CTX_KEY, {("task-1", False): (span, None, None)})
+
+    KantanoCeleryInstrumentor._trace_retry(
+        sender=task,
+        request=SimpleNamespace(id="task-1"),
+        reason=RuntimeError("provider unavailable"),
+    )
+
+    assert span.status.status_code is StatusCode.ERROR
+    assert span.status.description == "task retry"
+    assert span.attributes["celery.retry.reason"] == "provider unavailable"
+
+
+def test_transient_email_failure_logs_retry_and_final_attempt(monkeypatch) -> None:
+    from src.registration import tasks
+    from src.registration.email_gateway import TransientEmailGatewayError
+
+    def fail(coro) -> None:
+        coro.close()
+        raise TransientEmailGatewayError("provider unavailable")
+
+    monkeypatch.setattr(tasks, "_run_in_worker_loop", fail)
+    warnings: list[str] = []
+    errors: list[str] = []
+    monkeypatch.setattr(
+        tasks.registration_logger,
+        "warning",
+        lambda message, *_args, **_kwargs: warnings.append(message),
+    )
+    monkeypatch.setattr(
+        tasks.registration_logger,
+        "error",
+        lambda message, *_args, **_kwargs: errors.append(message),
+    )
+
+    send_task = tasks.send_verification_email
+    send_task.push_request(retries=0)
+    try:
+        with pytest.raises(TransientEmailGatewayError):
+            send_task.run(7, "token")
+    finally:
+        send_task.pop_request()
+    assert warnings == ["Verification email will be retried pending_registration_id=%s"]
+    assert errors == []
+
+    send_task.push_request(retries=tasks.EMAIL_MAX_RETRIES)
+    try:
+        with pytest.raises(TransientEmailGatewayError):
+            send_task.run(7, "token")
+    finally:
+        send_task.pop_request()
+    assert errors == [
+        "Verification email failed permanently after retries pending_registration_id=%s"
+    ]
 
 
 @pytest.mark.asyncio

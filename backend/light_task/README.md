@@ -14,6 +14,7 @@ src/
 ├── tags/          # теги проекта
 ├── invitations/   # ссылки-приглашения
 ├── realtimev1/    # WebSocket, Redis Pub/Sub и presence
+├── observability/  # logging, metrics, tracing и Sentry
 ├── db/            # SQLAlchemy и UnitOfWork
 └── shared/        # domain events и общие ошибки
 ```
@@ -23,6 +24,18 @@ permissions/repository → UnitOfWork → domain events`. Только `UnitOfWo
 транзакцию; realtime публикуется после commit.
 
 Подробнее: [архитектура](../../docs/architecture.md).
+
+## Observability
+
+Backend, outbox publisher и Celery worker формируют структурированные JSON-логи,
+Prometheus-метрики и OpenTelemetry traces с общими `request_id` и `trace_id`. Контекст
+передаётся через outbox и RabbitMQ, поэтому HTTP-запрос и фоновая обработка исследуются
+как одна цепочка. Grafana Alloy собирает телеметрию, а Sentry принимает обработанные 5xx
+и необработанные исключения.
+
+Локальный стек Prometheus, Loki, Tempo и Grafana запускается отдельным Compose overlay.
+Схема сигналов, dashboards и диагностические сценарии описаны в
+[руководстве по Observability](../../docs/observability.md).
 
 ## Разработка
 

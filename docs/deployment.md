@@ -28,6 +28,10 @@ Repository Secrets:
 - `YANDEX_CLIENT_SECRET`;
 - `RESEND_API_KEY`;
 - `RABBITMQ_PASSWORD`;
+- `SENTRY_DSN`;
+- `POSTGRES_MONITOR_PASSWORD`;
+- `GRAFANA_CLOUD_API_KEY`, `GRAFANA_MANAGEMENT_TOKEN`;
+- `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`;
 - `SWAGGER_HASH`;
 - `RESTIC_PASSWORD`;
 - `BACKUP_PINGZEN_URL`;
@@ -40,7 +44,12 @@ Repository Variables:
 - `FRONTEND_BASE_URL`;
 - `YANDEX_CLIENT_ID`, `YANDEX_REDIRECT_URI`;
 - `RESEND_FROM_EMAIL=no-reply@kantano.ru`;
-- `RESEND_FROM_NAME=Kantano`.
+- `RESEND_FROM_NAME=Kantano`;
+- `GRAFANA_CLOUD_PROMETHEUS_URL`, `GRAFANA_CLOUD_PROMETHEUS_USER`;
+- `GRAFANA_CLOUD_LOKI_URL`, `GRAFANA_CLOUD_LOKI_USER`;
+- `GRAFANA_CLOUD_OTLP_ENDPOINT`, `GRAFANA_CLOUD_TEMPO_USER`;
+- `GRAFANA_URL`, `GRAFANA_PROMETHEUS_UID`, `GRAFANA_LOKI_UID`;
+- `GRAFANA_TEMPO_UID`, `GRAFANA_USAGE_UID`.
 
 `GITHUB_TOKEN` предоставляется Actions автоматически. Значения секретов не должны
 храниться в репозитории или попадать в логи.
@@ -133,17 +142,22 @@ Kantano использует HTTP API Resend, поэтому открытые и
 
 ## Ручной запуск Compose
 
-На сервере подготовьте `.env` из шаблона и JWT-пару:
+На сервере подготовьте разделённые по границам доверия env-файлы и JWT-пару:
 
 ```bash
 cp .env.prod.template .env
+cp .env.backend.template .env.backend
+cp .env.alloy.template .env.alloy
+cp .env.gateway.template .env.gateway
+cp .env.grafana.template .env.grafana
+# подготовьте .env.backup из значений backup-раздела deploy workflow
 mkdir -p certs
 ```
 
-Заполните `.env`, положите в `certs/` файлы `jwt-private.pem` и `jwt-public.pem`, затем:
+Заполните env-файлы, положите в `certs/` файлы `jwt-private.pem` и `jwt-public.pem`, затем:
 
 ```bash
-chmod 600 certs/jwt-private.pem
+chmod 600 .env .env.backend .env.alloy .env.gateway .env.grafana .env.backup certs/jwt-private.pem
 docker login ghcr.io
 docker compose -f docker-compose.prod.yml pull
 docker compose -f docker-compose.prod.yml up -d --force-recreate --remove-orphans --wait
@@ -158,6 +172,9 @@ RabbitMQ использует отдельный vhost `kantano`, durable quorum
 `email_verification` и publisher confirms. Это устраняет зависимость Celery от
 устаревшего global QoS в RabbitMQ 4. Переход на classic queue требует отдельной
 проверки совместимости.
+
+Проверки telemetry pipeline, provisioning Grafana, корреляция по `request_id`, действия
+по alerts и сценарии отказа описаны в [observability runbook](./observability.md).
 
 Миграция заполняет `email_verified_at` всем существующим пользователям, поэтому после
 обновления они продолжают входить без повторного подтверждения почты.
