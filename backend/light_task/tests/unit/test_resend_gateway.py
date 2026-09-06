@@ -65,16 +65,19 @@ async def test_resend_gateway_treats_temporary_response_as_retryable(
 ) -> None:
     gateway = ResendGateway(
         ResendConfig(api_key="test-key"),
-        httpx.MockTransport(lambda _: httpx.Response(status_code)),
+        httpx.MockTransport(lambda _: httpx.Response(status_code, text="provider-secret-marker")),
     )
 
-    with pytest.raises(TransientEmailGatewayError):
+    with pytest.raises(TransientEmailGatewayError) as exc_info:
         await gateway.send_verification_email(
             recipient="user@example.com",
             username="example_user",
             verification_url="https://kantano.ru/verify-email?token=test",
             idempotency_key="registration-verification-1-token-hash",
         )
+
+    assert str(exc_info.value) == f"Email provider returned HTTP {status_code}"
+    assert "provider-secret-marker" not in str(exc_info.value)
 
 
 @pytest.mark.asyncio

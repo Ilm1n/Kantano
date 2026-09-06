@@ -13,6 +13,7 @@ from src.config import settings
 from src.db.unit_of_work import UnitOfWork
 from src.errors import ErrorCode
 from src.logger import registration_logger
+from src.observability.propagation import capture_outbox_context
 from src.registration.dto import (
     ConfirmRegistrationCommand,
     ResendVerificationCommand,
@@ -122,6 +123,7 @@ class StartRegistrationUseCase:
         return OutboxEvent(
             event_type="verification_email_requested",
             payload=json.dumps({"pending_registration_id": pending_id, "token": token}),
+            trace_context=capture_outbox_context(),
         )
 
     @staticmethod

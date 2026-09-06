@@ -8,6 +8,7 @@ from typing import Any
 from fastapi import WebSocket
 
 from src.logger import get_logger
+from src.observability.metrics import record_realtime_connection, record_realtime_error
 from src.projects.constants import ProjectRole
 from src.realtimev1.events import RealtimeAudience, RealtimeDeliveryMessage
 
@@ -39,6 +40,7 @@ class ConnectionManager:
         async with self._lock:
             self._user_connections.setdefault(user_id, set()).add(websocket)
             self._contexts[websocket] = ConnectionContext(user_id=user_id, project_id=None)
+            record_realtime_connection("user", 1)
 
     async def register_project(
         self,
@@ -57,12 +59,14 @@ class ConnectionManager:
                 project_id=project_id,
                 role=role,
             )
+            record_realtime_connection("project", 1)
 
     async def unregister(self, websocket: WebSocket) -> ConnectionContext | None:
         async with self._lock:
             context = self._contexts.pop(websocket, None)
             if not context:
                 return None
+            record_realtime_connection("project" if context.project_id is not None else "user", -1)
 
             user_set = self._user_connections.get(context.user_id)
             if user_set:
@@ -229,6 +233,7 @@ class ConnectionManager:
                 await ws.send_json(payload)
             except Exception:
                 stale_connections.append(ws)
+                record_realtime_error("delivery")
 
         for ws in stale_connections:
             await self.unregister(ws)

@@ -35,6 +35,7 @@ from src.boards.repository import BoardRepository
 from src.db.unit_of_work import UnitOfWork
 from src.errors import ErrorCode
 from src.logger import board_logger
+from src.observability.tracing import get_tracer
 from src.shared.errors import (
     AppError,
     BadRequestError,
@@ -42,6 +43,8 @@ from src.shared.errors import (
     DatabaseError,
     NotFoundError,
 )
+
+tracer = get_tracer(__name__)
 
 
 class GetProjectBoardUseCase:
@@ -54,6 +57,13 @@ class GetProjectBoardUseCase:
         self._permissions = permissions or BoardPermissions()
 
     async def execute(self, query: GetProjectBoardQuery) -> list[BoardColumn]:
+        with tracer.start_as_current_span(
+            "boards.get_project_board",
+            attributes={"project.id": query.project_id},
+        ):
+            return await self._execute(query)
+
+    async def _execute(self, query: GetProjectBoardQuery) -> list[BoardColumn]:
         try:
             async with self._session_factory() as session:
                 repository = BoardRepository(session)

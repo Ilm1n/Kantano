@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from sqlalchemy import DateTime, Integer, String, Text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.db.base import Base
@@ -28,3 +29,4 @@ class OutboxEvent(Base, TimestampMixin):
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     last_error: Mapped[str | None] = mapped_column(String(500))
+    trace_context: Mapped[dict[str, str] | None] = mapped_column(JSONB, nullable=True)

@@ -27,6 +27,7 @@ class DatabaseHelper:
             "echo_pool": echo_pool,
             "pool_size": pool_size,
             "max_overflow": max_overflow,
+            "hide_parameters": True,
         }
         if os.getenv("LIGHTTASK_TESTING") == "1":
             engine_kwargs["poolclass"] = NullPool

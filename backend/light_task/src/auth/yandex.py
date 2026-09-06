@@ -63,7 +63,7 @@ class YandexOAuthClient:
             raise YandexOAuthError("token_request_failed") from err
 
         if response.status_code != 200:
-            auth_logger.warning("Yandex token exchange failed: %s", response.text)
+            auth_logger.warning("Yandex token exchange failed with status %s", response.status_code)
             raise YandexOAuthError("invalid_code")
 
         token_data = response.json()
@@ -85,7 +85,9 @@ class YandexOAuthClient:
             raise YandexOAuthError("profile_request_failed") from err
 
         if response.status_code != 200:
-            auth_logger.warning("Yandex profile request failed: %s", response.text)
+            auth_logger.warning(
+                "Yandex profile request failed with status %s", response.status_code
+            )
             raise YandexOAuthError("profile_request_failed")
 
         return parse_yandex_profile(response.json())

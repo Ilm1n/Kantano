@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import Literal
 from urllib.parse import quote
 
-from pydantic import BaseModel, PostgresDsn, computed_field, model_validator
+from pydantic import BaseModel, Field, PostgresDsn, computed_field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -149,6 +149,34 @@ class RealtimeConfig(BaseModel):
     presence_key_prefix: str = "realtime:v1:presence"
 
 
+class ObservabilityConfig(BaseModel):
+    environment: Literal["local", "test", "production"] = "local"
+    service_name: str = "kantano-api"
+    version: str = "dev"
+    log_format: Literal["json", "console"] = "console"
+    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
+    tracing_enabled: bool = False
+    metrics_enabled: bool = True
+    otlp_endpoint: str = "http://alloy:4318/v1/traces"
+    sampling_rate: float = Field(default=1.0, ge=0.0, le=1.0)
+    sentry_dsn: str = ""
+    background_metrics_port: int = Field(default=9101, ge=1, le=65535)
+
+    @model_validator(mode="after")
+    def validate_production_observability(self) -> "ObservabilityConfig":
+        if self.environment == "production" and not self.tracing_enabled:
+            raise ValueError("Tracing must be enabled in production")
+        if self.environment == "production" and not self.metrics_enabled:
+            raise ValueError("Metrics must be enabled in production")
+        if self.environment == "production" and self.log_format != "json":
+            raise ValueError("JSON logging must be enabled in production")
+        if self.environment == "production" and not self.sentry_dsn:
+            raise ValueError("Sentry DSN is required in production")
+        if self.tracing_enabled and not self.otlp_endpoint:
+            raise ValueError("OTLP endpoint is required when tracing is enabled")
+        return self
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=(BASE_DIR.parent.parent / ".env",),
@@ -170,6 +198,7 @@ class Settings(BaseSettings):
     s3: S3Config
     files: Files = Files()
     realtime: RealtimeConfig = RealtimeConfig()
+    observability: ObservabilityConfig = ObservabilityConfig()
 
 
 settings = Settings()  # type: ignore[call-arg]
