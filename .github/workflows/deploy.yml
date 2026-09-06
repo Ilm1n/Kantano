@@ -109,8 +109,35 @@ jobs:
           RESEND_FROM_EMAIL: ${{ vars.RESEND_FROM_EMAIL }}
           RESEND_FROM_NAME: ${{ vars.RESEND_FROM_NAME }}
           RABBITMQ_PASSWORD: ${{ secrets.RABBITMQ_PASSWORD }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          POSTGRES_MONITOR_PASSWORD: ${{ secrets.POSTGRES_MONITOR_PASSWORD }}
+          GRAFANA_CLOUD_PROMETHEUS_URL: ${{ vars.GRAFANA_CLOUD_PROMETHEUS_URL }}
+          GRAFANA_CLOUD_PROMETHEUS_USER: ${{ vars.GRAFANA_CLOUD_PROMETHEUS_USER }}
+          GRAFANA_CLOUD_LOKI_URL: ${{ vars.GRAFANA_CLOUD_LOKI_URL }}
+          GRAFANA_CLOUD_LOKI_USER: ${{ vars.GRAFANA_CLOUD_LOKI_USER }}
+          GRAFANA_CLOUD_OTLP_ENDPOINT: ${{ vars.GRAFANA_CLOUD_OTLP_ENDPOINT }}
+          GRAFANA_CLOUD_TEMPO_USER: ${{ vars.GRAFANA_CLOUD_TEMPO_USER }}
+          GRAFANA_CLOUD_API_KEY: ${{ secrets.GRAFANA_CLOUD_API_KEY }}
+          GRAFANA_URL: ${{ vars.GRAFANA_URL }}
+          GRAFANA_MANAGEMENT_TOKEN: ${{ secrets.GRAFANA_MANAGEMENT_TOKEN }}
+          GRAFANA_PROMETHEUS_UID: ${{ vars.GRAFANA_PROMETHEUS_UID }}
+          GRAFANA_LOKI_UID: ${{ vars.GRAFANA_LOKI_UID }}
+          GRAFANA_TEMPO_UID: ${{ vars.GRAFANA_TEMPO_UID }}
+          GRAFANA_USAGE_UID: ${{ vars.GRAFANA_USAGE_UID }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           cat <<EOF > .env.prod
+          LIGHTTASK_CONFIG__DB__PASSWORD=$DB_PASSWORD
+          LIGHTTASK_CONFIG__QUEUE__USER=lighttask
+          LIGHTTASK_CONFIG__QUEUE__PASSWORD=$RABBITMQ_PASSWORD
+          LIGHTTASK_CONFIG__QUEUE__VIRTUAL_HOST=kantano
+          POSTGRES_MONITOR_PASSWORD=$POSTGRES_MONITOR_PASSWORD
+          IMAGE_REPO_OWNER=$OWNER
+          IMAGE_TAG=$TAG
+          EOF
+
+          cat <<EOF > .env.backend
           LIGHTTASK_CONFIG__DB__PASSWORD=$DB_PASSWORD
           LIGHTTASK_CONFIG__S3__BACKEND=s3
           LIGHTTASK_CONFIG__S3__ACCESS_KEY=$S3_ACCESS
@@ -128,9 +155,34 @@ jobs:
           LIGHTTASK_CONFIG__QUEUE__USER=lighttask
           LIGHTTASK_CONFIG__QUEUE__PASSWORD=$RABBITMQ_PASSWORD
           LIGHTTASK_CONFIG__QUEUE__VIRTUAL_HOST=kantano
-          IMAGE_REPO_OWNER=$OWNER
-          IMAGE_TAG=$TAG
+          LIGHTTASK_CONFIG__OBSERVABILITY__SENTRY_DSN=$SENTRY_DSN
+          LIGHTTASK_CONFIG__OBSERVABILITY__SAMPLING_RATE=1.0
+          EOF
+
+          cat <<EOF > .env.alloy
+          GRAFANA_CLOUD_PROMETHEUS_URL=$GRAFANA_CLOUD_PROMETHEUS_URL
+          GRAFANA_CLOUD_PROMETHEUS_USER=$GRAFANA_CLOUD_PROMETHEUS_USER
+          GRAFANA_CLOUD_LOKI_URL=$GRAFANA_CLOUD_LOKI_URL
+          GRAFANA_CLOUD_LOKI_USER=$GRAFANA_CLOUD_LOKI_USER
+          GRAFANA_CLOUD_OTLP_ENDPOINT=$GRAFANA_CLOUD_OTLP_ENDPOINT
+          GRAFANA_CLOUD_TEMPO_USER=$GRAFANA_CLOUD_TEMPO_USER
+          GRAFANA_CLOUD_API_KEY=$GRAFANA_CLOUD_API_KEY
+          EOF
+
+          cat <<EOF > .env.gateway
           SWAGGER_HASH='$SWAGGER_HASH'
+          EOF
+
+          cat <<EOF > .env.grafana
+          GRAFANA_URL=$GRAFANA_URL
+          GRAFANA_TOKEN=$GRAFANA_MANAGEMENT_TOKEN
+          GRAFANA_PROMETHEUS_UID=$GRAFANA_PROMETHEUS_UID
+          GRAFANA_LOKI_UID=$GRAFANA_LOKI_UID
+          GRAFANA_TEMPO_UID=$GRAFANA_TEMPO_UID
+          GRAFANA_USAGE_UID=$GRAFANA_USAGE_UID
+          TELEGRAM_BOT_TOKEN=$TELEGRAM_BOT_TOKEN
+          TELEGRAM_CHAT_ID=$TELEGRAM_CHAT_ID
+          REQUIRE_TELEGRAM=1
           EOF
 
           cat <<EOF > .env.backup
@@ -153,7 +205,7 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_KEY }}
           passphrase: ${{ secrets.VPS_PASSPHRASE }}
-          source: "docker-compose.prod.yml,.env.prod,.env.backup,Caddyfile,rabbitmq.conf,certs/,scripts/backup-db.sh"
+          source: "docker-compose.prod.yml,.env.prod,.env.backend,.env.gateway,.env.alloy,.env.backup,.env.grafana,Caddyfile,rabbitmq.conf,certs/,scripts/backup-db.sh,observability/"
           target: "/home/${{ secrets.VPS_USER }}/app"
 
       - name: Deploy via SSH
@@ -196,9 +248,17 @@ jobs:
             }
 
             cd ~/app
+            previous_tag="$(sed -n 's/^IMAGE_TAG=//p' .env 2>/dev/null | tail -n 1)"
             if [ -f .env.prod ]; then mv .env.prod .env; fi
-            chmod 600 certs/*.pem .env.backup
+            chmod 600 certs/*.pem .env .env.backend .env.gateway .env.alloy .env.backup .env.grafana
             chmod 700 scripts/backup-db.sh
+
+            docker compose -f docker-compose.prod.yml config -q
+            docker compose -f docker-compose.prod.yml run --rm --no-deps alloy \
+              validate /etc/alloy/config.alloy
+            docker run --rm -e SWAGGER_HASH="$(sed -n 's/^SWAGGER_HASH=//p' .env.gateway)" \
+              -v "$(pwd)/Caddyfile:/etc/caddy/Caddyfile:ro" \
+              caddy:2.10.2-alpine caddy validate --config /etc/caddy/Caddyfile
 
             retry 5 10 docker_login_ghcr
             retry 5 15 pull_images
@@ -206,7 +266,28 @@ jobs:
 
             if ! docker compose -f docker-compose.prod.yml up -d --force-recreate --remove-orphans --wait --wait-timeout 180; then
               docker compose -f docker-compose.prod.yml ps --all
-              docker compose -f docker-compose.prod.yml logs --tail=200 migrations rabbitmq backend celery-worker outbox-publisher
+              docker compose -f docker-compose.prod.yml logs --tail=200 migrations postgres-monitoring-init rabbitmq backend celery-worker outbox-publisher alloy
+              if [ -n "$previous_tag" ]; then
+                sed -i "s/^IMAGE_TAG=.*/IMAGE_TAG=$previous_tag/" .env
+                docker compose -f docker-compose.prod.yml up -d --force-recreate --wait --wait-timeout 180 || true
+              fi
+              exit 1
+            fi
+
+            retry 10 5 docker compose -f docker-compose.prod.yml exec -T backend curl -fsS http://localhost:8000/api/health/ready
+            docker compose -f docker-compose.prod.yml exec -T backend curl -fsS http://localhost:8000/api/projects >/dev/null || true
+            retry 10 5 docker compose -f docker-compose.prod.yml exec -T backend sh -c 'curl -fsS http://localhost:8000/metrics | grep -q http_requests_total'
+            retry 10 5 docker compose -f docker-compose.prod.yml exec -T alloy sh -c 'wget -q -O - http://localhost:12345/metrics | grep -q alloy_build_info'
+            docker compose -f docker-compose.prod.yml exec -T rabbitmq rabbitmq-diagnostics -q ping
+
+            docker run --rm --env-file .env.grafana \
+              -v "$(pwd)/observability/grafana:/work:ro" \
+              python:3.12-alpine python /work/apply.py
+
+            docker compose -f docker-compose.prod.yml logs --since=5m backend celery-worker outbox-publisher alloy | \
+              tee /tmp/kantano-observability-deploy.log
+            if grep -Eiq 'traceback|unhandled exception|fatal|panic' /tmp/kantano-observability-deploy.log; then
+              echo "Unexpected runtime errors found after deployment." >&2
               exit 1
             fi
 

@@ -7,12 +7,26 @@ on:
       - "backend/light_task/**"
       - ".github/workflows/backend-tests.yml"
       - "docker-compose.test.yml"
+      - "docker-compose.dev.yml"
+      - "docker-compose.prod.yml"
+      - "docker-compose.observability.yml"
+      - "docker-compose.observability.verify.yml"
+      - "Caddyfile"
+      - "rabbitmq.conf"
+      - "observability/**"
   pull_request:
     branches: ["main"]
     paths:
       - "backend/light_task/**"
       - ".github/workflows/backend-tests.yml"
       - "docker-compose.test.yml"
+      - "docker-compose.dev.yml"
+      - "docker-compose.prod.yml"
+      - "docker-compose.observability.yml"
+      - "docker-compose.observability.verify.yml"
+      - "Caddyfile"
+      - "rabbitmq.conf"
+      - "observability/**"
   workflow_dispatch:
 
 concurrency:
@@ -81,6 +95,9 @@ jobs:
       LIGHTTASK_CONFIG__QUEUE__USER: lighttask
       LIGHTTASK_CONFIG__QUEUE__PASSWORD: lighttask-test
       LIGHTTASK_CONFIG__QUEUE__VIRTUAL_HOST: kantano
+      LIGHTTASK_CONFIG__OBSERVABILITY__ENVIRONMENT: test
+      LIGHTTASK_CONFIG__OBSERVABILITY__TRACING_ENABLED: "False"
+      LIGHTTASK_CONFIG__OBSERVABILITY__METRICS_ENABLED: "False"
 
     steps:
       - name: Checkout
@@ -98,10 +115,10 @@ jobs:
         run: uv sync --group dev
 
       - name: Run Ruff Linter Check
-        run: uv run ruff check .
+        run: uv run ruff check . ../../observability/fake-email/server.py
 
       - name: Run Ruff Formatter Check
-        run: uv run ruff format --check .
+        run: uv run ruff format --check . ../../observability/fake-email/server.py
 
       - name: Run Type Checking (Basedpyright)
         run: uv run basedpyright
@@ -111,3 +128,68 @@ jobs:
 
       - name: Run Backend Tests
         run: uv run pytest -q
+
+      - name: Build Backend Image
+        run: docker build --pull --tag kantano-backend-ci .
+
+      - name: Validate Compose Files
+        working-directory: ../..
+        env:
+          POSTGRES_MONITOR_PASSWORD: test-monitor-password
+          GRAFANA_CLOUD_PROMETHEUS_URL: http://example.test/prometheus
+          GRAFANA_CLOUD_PROMETHEUS_USER: test
+          GRAFANA_CLOUD_LOKI_URL: http://example.test/loki
+          GRAFANA_CLOUD_LOKI_USER: test
+          GRAFANA_CLOUD_OTLP_ENDPOINT: http://example.test/otlp
+          GRAFANA_CLOUD_TEMPO_USER: test
+          GRAFANA_CLOUD_API_KEY: test
+          IMAGE_REPO_OWNER: test
+          SWAGGER_HASH: test
+          LIGHTTASK_CONFIG__DB__PASSWORD: test
+          LIGHTTASK_CONFIG__QUEUE__USER: test
+          LIGHTTASK_CONFIG__QUEUE__PASSWORD: test
+        run: |
+          cp .env.backend.template .env.backend
+          cp .env.gateway.template .env.gateway
+          cp .env.alloy.template .env.alloy
+          docker compose -f docker-compose.test.yml config -q
+          docker compose -f docker-compose.dev.yml -f docker-compose.observability.yml config -q
+          docker compose -f docker-compose.dev.yml -f docker-compose.observability.yml -f docker-compose.observability.verify.yml config -q
+          docker compose -f docker-compose.prod.yml config -q
+
+      - name: Validate Alloy and Grafana Assets
+        working-directory: ../..
+        run: |
+          docker run --rm \
+            -e POSTGRES_MONITOR_DSN=postgresql://user:pass@db:5432/db \
+            -v "$PWD/observability/alloy/config.local.alloy:/etc/alloy/config.alloy:ro" \
+            grafana/alloy:v1.19.2 validate /etc/alloy/config.alloy
+          docker run --rm \
+            -e POSTGRES_MONITOR_DSN=postgresql://user:pass@db:5432/db \
+            -e GRAFANA_CLOUD_PROMETHEUS_URL=http://example.test/prometheus \
+            -e GRAFANA_CLOUD_PROMETHEUS_USER=test \
+            -e GRAFANA_CLOUD_LOKI_URL=http://example.test/loki \
+            -e GRAFANA_CLOUD_LOKI_USER=test \
+            -e GRAFANA_CLOUD_OTLP_ENDPOINT=http://example.test/otlp \
+            -e GRAFANA_CLOUD_TEMPO_USER=test \
+            -e GRAFANA_CLOUD_API_KEY=test \
+            -v "$PWD/observability/alloy/config.prod.alloy:/etc/alloy/config.alloy:ro" \
+            grafana/alloy:v1.19.2 validate /etc/alloy/config.alloy
+          docker run --rm --entrypoint /usr/bin/loki \
+            -v "$PWD/observability/loki/loki-config.yml:/etc/loki/loki-config.yml:ro" \
+            grafana/loki:3.5.12 \
+            '-config.file=/etc/loki/loki-config.yml' '-verify-config'
+          docker run --rm --entrypoint /tempo \
+            -v "$PWD/observability/tempo/tempo.yml:/etc/tempo/tempo.yml:ro" \
+            grafana/tempo:2.8.4 \
+            '-config.file=/etc/tempo/tempo.yml' '-config.verify=true'
+          python -m py_compile observability/grafana/apply.py
+          python -m json.tool observability/grafana/alert-rules.json >/dev/null
+          python -m json.tool observability/grafana/dashboards/api.json >/dev/null
+          python -m json.tool observability/grafana/dashboards/background.json >/dev/null
+          python -m json.tool observability/grafana/dashboards/infrastructure.json >/dev/null
+          SWAGGER_HASH="$(docker run --rm caddy:2.10.2-alpine caddy hash-password --plaintext ci-password)"
+          docker run --rm \
+            -e SWAGGER_HASH="$SWAGGER_HASH" \
+            -v "$PWD/Caddyfile:/etc/caddy/Caddyfile:ro" \
+            caddy:2.10.2-alpine caddy validate --config /etc/caddy/Caddyfile
