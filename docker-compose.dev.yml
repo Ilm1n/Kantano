@@ -119,7 +119,7 @@ services:
         condition: service_healthy
   celery-worker:
     build: ./backend/light_task
-    command: celery -A src.registration.celery_app worker --pool=solo --without-mingle --without-gossip --without-heartbeat --loglevel=INFO
+    command: celery --quiet -A src.registration.celery_app worker --pool=solo --without-mingle --without-gossip --without-heartbeat --loglevel=INFO
     env_file: .env
     environment:
       - LIGHTTASK_CONFIG__DB__HOST=db

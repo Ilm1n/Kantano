@@ -1,0 +1,203 @@
+logging {
+  level  = "info"
+  format = "json"
+}
+
+discovery.docker "containers" {
+  host = "unix:///var/run/docker.sock"
+}
+
+discovery.relabel "container_logs" {
+  targets = discovery.docker.containers.targets
+
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_project"]
+    regex         = "lighttask_prod"
+    action        = "keep"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    regex         = "(jwt-certs-init|migrations|postgres-monitoring-init)"
+    action        = "drop"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "container"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "service"
+  }
+
+  rule {
+    target_label = "environment"
+    replacement  = "production"
+  }
+}
+
+loki.source.docker "containers" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = discovery.relabel.container_logs.output
+  forward_to = [loki.process.application.receiver]
+}
+
+loki.process "application" {
+  stage.json {
+    expressions = {
+      service     = "service",
+      environment = "environment",
+      level       = "level",
+    }
+  }
+
+  stage.labels {
+    values = {
+      service     = "",
+      environment = "",
+      level       = "",
+    }
+  }
+
+  forward_to = [loki.write.grafana_cloud.receiver]
+}
+
+loki.write "grafana_cloud" {
+  endpoint {
+    url = sys.env("GRAFANA_CLOUD_LOKI_URL")
+    basic_auth {
+      username = sys.env("GRAFANA_CLOUD_LOKI_USER")
+      password = sys.env("GRAFANA_CLOUD_API_KEY")
+    }
+  }
+}
+
+prometheus.exporter.unix "host" {
+  rootfs_path = "/host/root"
+  procfs_path = "/host/proc"
+  sysfs_path  = "/host/sys"
+}
+
+prometheus.exporter.postgres "database" {
+  data_source_names = [sys.env("POSTGRES_MONITOR_DSN")]
+}
+
+prometheus.exporter.redis "cache" {
+  redis_addr = "redis://redis:6379"
+}
+
+prometheus.exporter.cadvisor "containers" {
+  docker_host = "unix:///var/run/docker.sock"
+}
+
+prometheus.scrape "application" {
+  targets = [
+    { "__address__" = "backend:8000", "job" = "kantano-api", "environment" = "production" },
+    { "__address__" = "outbox-publisher:9101", "job" = "kantano-outbox-publisher", "environment" = "production" },
+    { "__address__" = "celery-worker:9101", "job" = "kantano-celery-worker", "environment" = "production" },
+  ]
+  metrics_path    = "/metrics"
+  scrape_interval = "30s"
+  scrape_timeout  = "10s"
+  forward_to      = [prometheus.remote_write.grafana_cloud.receiver]
+}
+
+prometheus.scrape "infrastructure" {
+  targets = array.concat(
+    prometheus.exporter.unix.host.targets,
+    prometheus.exporter.postgres.database.targets,
+    prometheus.exporter.redis.cache.targets,
+    prometheus.exporter.cadvisor.containers.targets,
+    [
+      { "__address__" = "rabbitmq:15692", "job" = "rabbitmq", "environment" = "production" },
+      { "__address__" = "alloy:12345", "job" = "alloy", "environment" = "production" },
+    ],
+  )
+  scrape_interval = "60s"
+  scrape_timeout  = "10s"
+  forward_to      = [prometheus.relabel.infrastructure_environment.receiver]
+}
+
+prometheus.relabel "infrastructure_environment" {
+  rule {
+    target_label = "environment"
+    replacement  = "production"
+  }
+  forward_to = [prometheus.remote_write.grafana_cloud.receiver]
+}
+
+prometheus.remote_write "grafana_cloud" {
+  wal {
+    truncate_frequency = "1h"
+    min_keepalive_time = "5m"
+    max_keepalive_time = "1h"
+  }
+
+  endpoint {
+    url = sys.env("GRAFANA_CLOUD_PROMETHEUS_URL")
+    basic_auth {
+      username = sys.env("GRAFANA_CLOUD_PROMETHEUS_USER")
+      password = sys.env("GRAFANA_CLOUD_API_KEY")
+    }
+    queue_config {
+      capacity             = 2500
+      max_shards           = 4
+      max_samples_per_send = 1000
+      batch_send_deadline  = "5s"
+      retry_on_http_429    = true
+    }
+  }
+}
+
+otelcol.auth.basic "grafana_cloud_traces" {
+  username = sys.env("GRAFANA_CLOUD_TEMPO_USER")
+  password = sys.env("GRAFANA_CLOUD_API_KEY")
+}
+
+otelcol.receiver.otlp "application" {
+  http {
+    endpoint = "0.0.0.0:4318"
+  }
+  output {
+    traces = [otelcol.processor.memory_limiter.traces.input]
+  }
+}
+
+otelcol.processor.memory_limiter "traces" {
+  check_interval = "1s"
+  limit          = "320MiB"
+  spike_limit    = "64MiB"
+  output {
+    traces = [otelcol.processor.batch.traces.input]
+  }
+}
+
+otelcol.processor.batch "traces" {
+  timeout         = "5s"
+  send_batch_size = 256
+  output {
+    traces = [otelcol.exporter.otlphttp.grafana_cloud.input]
+  }
+}
+
+otelcol.exporter.otlphttp "grafana_cloud" {
+  client {
+    endpoint = sys.env("GRAFANA_CLOUD_OTLP_ENDPOINT")
+    auth     = otelcol.auth.basic.grafana_cloud_traces.handler
+    timeout  = "5s"
+  }
+  retry_on_failure {
+    enabled         = true
+    initial_interval = "1s"
+    max_interval     = "10s"
+    max_elapsed_time = "60s"
+  }
+  sending_queue {
+    enabled      = true
+    queue_size   = 1024
+    num_consumers = 2
+  }
+}

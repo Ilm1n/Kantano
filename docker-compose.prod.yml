@@ -10,7 +10,7 @@ services:
       - "80:80"
       - "443:443"
       - "443:443/udp"
-    env_file: .env
+    env_file: .env.gateway
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
@@ -47,6 +47,33 @@ services:
         limits:
           cpus: '0.5'
           memory: 300M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  postgres-monitoring-init:
+    image: postgres:15.6-alpine3.19
+    restart: "no"
+    environment:
+      PGHOST: db
+      PGPORT: 5432
+      PGUSER: lighttask_user
+      PGPASSWORD: ${LIGHTTASK_CONFIG__DB__PASSWORD}
+      PGDATABASE: lighttask
+      POSTGRES_MONITOR_PASSWORD: ${POSTGRES_MONITOR_PASSWORD}
+    volumes:
+      - ./observability/postgres/init-monitoring.sql:/init-monitoring.sql:ro
+    command:
+      - sh
+      - -ec
+      - psql --set=ON_ERROR_STOP=1 --set=monitor_password="$$POSTGRES_MONITOR_PASSWORD" --file=/init-monitoring.sql
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - backend-db
     logging:
       driver: "json-file"
       options:
@@ -98,6 +125,11 @@ services:
         limits:
           cpus: '0.2'
           memory: 256M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   jwt-certs-init:
     image: alpine:3.21
@@ -117,11 +149,16 @@ services:
         chmod 600 /certs/jwt-private.pem
         chmod 644 /certs/jwt-public.pem
     restart: "no"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   backend:
     image: ghcr.io/${IMAGE_REPO_OWNER}/lighttask-backend:${IMAGE_TAG:-main}
     restart: unless-stopped
-    env_file: .env
+    env_file: .env.backend
     volumes:
       - jwt_certs_prod:/app/certs:ro
     environment:
@@ -138,6 +175,13 @@ services:
       - LIGHTTASK_CONFIG__REALTIME__REDIS_URL=redis://redis:6379/0
       - LIGHTTASK_CONFIG__QUEUE__HOST=rabbitmq
       - LIGHTTASK_SKIP_MIGRATIONS=1
+      - LIGHTTASK_CONFIG__OBSERVABILITY__ENVIRONMENT=production
+      - LIGHTTASK_CONFIG__OBSERVABILITY__SERVICE_NAME=kantano-api
+      - LIGHTTASK_CONFIG__OBSERVABILITY__VERSION=${IMAGE_TAG:-main}
+      - LIGHTTASK_CONFIG__OBSERVABILITY__LOG_FORMAT=json
+      - LIGHTTASK_CONFIG__OBSERVABILITY__TRACING_ENABLED=true
+      - LIGHTTASK_CONFIG__OBSERVABILITY__METRICS_ENABLED=true
+      - LIGHTTASK_CONFIG__OBSERVABILITY__OTLP_ENDPOINT=http://alloy:4318/v1/traces
     depends_on:
       jwt-certs-init:
         condition: service_completed_successfully
@@ -149,6 +193,8 @@ services:
         condition: service_healthy
       migrations:
         condition: service_completed_successfully
+      alloy:
+        condition: service_started
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:8000/api/health/ready" ]
       interval: 30s
@@ -162,6 +208,7 @@ services:
         limits:
           cpus: '0.8'
           memory: 400M
+    stop_grace_period: 20s
     logging:
       driver: "json-file"
       options:
@@ -171,7 +218,7 @@ services:
   migrations:
     image: ghcr.io/${IMAGE_REPO_OWNER}/lighttask-backend:${IMAGE_TAG:-main}
     command: ["true"]
-    env_file: .env
+    env_file: .env.backend
     volumes:
       - jwt_certs_prod:/app/certs:ro
     environment:
@@ -187,12 +234,17 @@ services:
         condition: service_healthy
     networks:
       - backend-db
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   celery-worker:
     image: ghcr.io/${IMAGE_REPO_OWNER}/lighttask-backend:${IMAGE_TAG:-main}
     restart: unless-stopped
-    command: celery -A src.registration.celery_app worker --pool=solo --without-mingle --without-gossip --without-heartbeat --loglevel=INFO
-    env_file: .env
+    command: celery --quiet -A src.registration.celery_app worker --pool=solo --without-mingle --without-gossip --without-heartbeat --loglevel=INFO
+    env_file: .env.backend
     environment:
       - LIGHTTASK_CONFIG__DB__HOST=db
       - LIGHTTASK_CONFIG__DB__PORT=5432
@@ -200,6 +252,13 @@ services:
       - LIGHTTASK_CONFIG__DB__NAME=lighttask
       - LIGHTTASK_CONFIG__QUEUE__HOST=rabbitmq
       - LIGHTTASK_SKIP_MIGRATIONS=1
+      - LIGHTTASK_CONFIG__OBSERVABILITY__ENVIRONMENT=production
+      - LIGHTTASK_CONFIG__OBSERVABILITY__SERVICE_NAME=kantano-celery-worker
+      - LIGHTTASK_CONFIG__OBSERVABILITY__VERSION=${IMAGE_TAG:-main}
+      - LIGHTTASK_CONFIG__OBSERVABILITY__LOG_FORMAT=json
+      - LIGHTTASK_CONFIG__OBSERVABILITY__TRACING_ENABLED=true
+      - LIGHTTASK_CONFIG__OBSERVABILITY__METRICS_ENABLED=true
+      - LIGHTTASK_CONFIG__OBSERVABILITY__OTLP_ENDPOINT=http://alloy:4318/v1/traces
     depends_on:
       db:
         condition: service_healthy
@@ -207,8 +266,13 @@ services:
         condition: service_healthy
       migrations:
         condition: service_completed_successfully
+      alloy:
+        condition: service_started
     networks:
       - backend-db
+    expose:
+      - "9101"
+    stop_grace_period: 20s
     logging:
       driver: "json-file"
       options:
@@ -219,7 +283,7 @@ services:
     image: ghcr.io/${IMAGE_REPO_OWNER}/lighttask-backend:${IMAGE_TAG:-main}
     restart: unless-stopped
     command: python -m src.registration.outbox_publisher
-    env_file: .env
+    env_file: .env.backend
     environment:
       - LIGHTTASK_CONFIG__DB__HOST=db
       - LIGHTTASK_CONFIG__DB__PORT=5432
@@ -227,6 +291,13 @@ services:
       - LIGHTTASK_CONFIG__DB__NAME=lighttask
       - LIGHTTASK_CONFIG__QUEUE__HOST=rabbitmq
       - LIGHTTASK_SKIP_MIGRATIONS=1
+      - LIGHTTASK_CONFIG__OBSERVABILITY__ENVIRONMENT=production
+      - LIGHTTASK_CONFIG__OBSERVABILITY__SERVICE_NAME=kantano-outbox-publisher
+      - LIGHTTASK_CONFIG__OBSERVABILITY__VERSION=${IMAGE_TAG:-main}
+      - LIGHTTASK_CONFIG__OBSERVABILITY__LOG_FORMAT=json
+      - LIGHTTASK_CONFIG__OBSERVABILITY__TRACING_ENABLED=true
+      - LIGHTTASK_CONFIG__OBSERVABILITY__METRICS_ENABLED=true
+      - LIGHTTASK_CONFIG__OBSERVABILITY__OTLP_ENDPOINT=http://alloy:4318/v1/traces
     depends_on:
       db:
         condition: service_healthy
@@ -234,8 +305,60 @@ services:
         condition: service_healthy
       migrations:
         condition: service_completed_successfully
+      alloy:
+        condition: service_started
     networks:
       - backend-db
+    expose:
+      - "9101"
+    stop_grace_period: 20s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  alloy:
+    image: grafana/alloy:v1.19.2
+    privileged: true
+    restart: unless-stopped
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --storage.path=/var/lib/alloy/data
+      - /etc/alloy/config.alloy
+    env_file: .env.alloy
+    environment:
+      GOMEMLIMIT: 384MiB
+      POSTGRES_MONITOR_DSN: postgresql://kantano_monitor:${POSTGRES_MONITOR_PASSWORD}@db:5432/lighttask?sslmode=disable
+    volumes:
+      - ./observability/alloy/config.prod.alloy:/etc/alloy/config.alloy:ro
+      - alloy_data_prod:/var/lib/alloy/data
+      - /:/host/root:ro,rslave
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /run/udev/data:/run/udev/data:ro
+      - /:/rootfs:ro,rslave
+      - /var/run:/var/run:rw
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+      - /dev/disk:/dev/disk:ro
+    depends_on:
+      postgres-monitoring-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - backend-db
+    expose:
+      - "4318"
+      - "12345"
+    deploy:
+      resources:
+        limits:
+          memory: 512M
     logging:
       driver: "json-file"
       options:
@@ -252,3 +375,4 @@ volumes:
   caddy_config:
   jwt_certs_prod:
   rabbitmq_data_prod:
+  alloy_data_prod:

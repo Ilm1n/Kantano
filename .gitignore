@@ -2,6 +2,10 @@
 .env.*
 !.env.template
 !.env.prod.template
+!.env.backend.template
+!.env.alloy.template
+!.env.gateway.template
+!.env.grafana.template
 !.env.backup.template
 !frontend/light-task-frontend/.env.template
 .codex

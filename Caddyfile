@@ -1,46 +1,53 @@
 www.kantano.ru {
-    redir https://kantano.ru{uri} permanent
+	redir https://kantano.ru{uri} permanent
 }
 
 kantano.ru {
-    encode zstd gzip
+	encode zstd gzip
 
-    header {
-        Strict-Transport-Security "max-age=31536000;"
-        X-Content-Type-Options "nosniff"
-        Referrer-Policy "strict-origin-when-cross-origin"
-        -Server
-    }
+	header {
+		Strict-Transport-Security "max-age=31536000;"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
 
-    @deny_iframe {
-        not header_regexp allowed_referer Referer ^https?://([^/]+\.)?(kantano\.ru|webvisor\.com|metri[ck]a\.yandex\.(com|ru|by|com\.tr))/
-    }
-    header @deny_iframe X-Frame-Options "SAMEORIGIN"
+	@deny_iframe {
+		not header_regexp allowed_referer Referer ^https?://([^/]+\.)?(kantano\.ru|webvisor\.com|metri[ck]a\.yandex\.(com|ru|by|com\.tr))/
+	}
+	header @deny_iframe X-Frame-Options "SAMEORIGIN"
 
-    @swagger path /docs* /openapi.json* /redoc*
-    basic_auth @swagger {
-        Ilm1n {$SWAGGER_HASH}
-    }
+	@swagger path /docs* /openapi.json* /redoc*
+	basic_auth @swagger {
+		Ilm1n {$SWAGGER_HASH}
+	}
 
-    @backend path /api/* /ws/* /docs* /openapi.json* /redoc*
-    handle @backend {
-        reverse_proxy backend:8000
-    }
+	@internal_metrics path /metrics /metrics/*
+	respond @internal_metrics 404
 
-    handle {
-        root * /usr/share/caddy/html
+	@backend path /api/* /ws/* /docs* /openapi.json* /redoc*
+	handle @backend {
+		reverse_proxy backend:8000 {
+			header_up -traceparent
+			header_up -tracestate
+			header_up -baggage
+		}
+	}
 
-        @immutable {
-            path /assets/*
-        }
-        header @immutable Cache-Control "public, max-age=31536000, immutable"
+	handle {
+		root * /usr/share/caddy/html
 
-        @revalidate {
-            not path /assets/*
-        }
-        header @revalidate Cache-Control "no-cache, no-store, must-revalidate"
+		@immutable {
+			path /assets/*
+		}
+		header @immutable Cache-Control "public, max-age=31536000, immutable"
 
-        try_files {path} /index.html
-        file_server
-    }
+		@revalidate {
+			not path /assets/*
+		}
+		header @revalidate Cache-Control "no-cache, no-store, must-revalidate"
+
+		try_files {path} /index.html
+		file_server
+	}
 }
