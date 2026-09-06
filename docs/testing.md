@@ -1,5 +1,8 @@
 # Тестирование
 
+Все Task-команды выполняются из корня репозитория. Полный список: `task --list`.
+Подробности о задаче: `task --summary <task>`.
+
 ## Набор проверок
 
 | Область | Инструменты | Что проверяется |
@@ -13,24 +16,14 @@
 
 ## Backend
 
-Полный набор требует отдельные PostgreSQL, Redis и RabbitMQ:
+Полный backend-набор вместе с отдельными PostgreSQL, Redis и RabbitMQ запускается так:
 
 ```bash
-docker compose -f docker-compose.test.yml up -d
-
-cd backend/light_task
-uv sync --group dev
-uv run ruff check .
-uv run ruff format --check .
-uv run basedpyright
-uv run pytest -q
+task test:backend
 ```
 
-После прогона из корня репозитория:
-
-```bash
-docker compose -f docker-compose.test.yml down
-```
+Task автоматически останавливает тестовый Compose после успешного прогона или ошибки.
+Локальные dev-контейнеры и именованные volumes не затрагиваются.
 
 Тестовый Compose использует PostgreSQL на `55432`, Redis на `16379` с индексом `/15`
 и RabbitMQ на `55672`. `tests/conftest.py` применяет миграции, очищает состояние между
@@ -41,8 +34,7 @@ API-ключ не требуется. Тестовые JWT-ключи наход
 Unit tests не требуют Docker:
 
 ```bash
-cd backend/light_task
-uv run pytest -q tests/unit
+task test:backend:unit
 ```
 
 Отдельные запуски:
@@ -56,10 +48,7 @@ uv run pytest -q tests/test_realtime_integration.py
 ## Frontend
 
 ```bash
-cd frontend/light-task-frontend
-pnpm install
-pnpm test:unit
-pnpm build
+task test:frontend
 ```
 
 Для разработки тестов в watch-режиме:
@@ -70,13 +59,16 @@ pnpm test:unit:watch
 
 `pnpm build` сначала запускает `vue-tsc -b`, затем собирает приложение через Vite.
 
+Все backend/frontend тесты последовательно запускаются командой `task test`, а полный
+локальный quality gate, включая Ruff, Basedpyright, Compose validation и frontend build,
+— командой `task check`.
+
 ## Pre-commit и CI
 
-Pre-commit настраивается из `backend/light_task`:
+Pre-commit устанавливается командой `task setup`. Ручной полный прогон:
 
 ```bash
-uv run pre-commit install
-uv run pre-commit run --all-files
+uv run --project backend/light_task pre-commit run --all-files
 ```
 
 Workflow `.github/workflows/backend-tests.yml` запускается при backend-изменениях в

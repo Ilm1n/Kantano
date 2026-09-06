@@ -1,42 +1,39 @@
 # Локальная разработка
 
+Все Task-команды выполняются из корня репозитория. Полный список: `task --list`.
+Подробности о задаче: `task --summary <task>`.
+
 ## Требования
 
+- Task v3;
 - Docker с Compose;
-- Node.js 24 и pnpm 9;
-- Python 3.12 и [uv](https://docs.astral.sh/uv/) - только для запуска backend вне Docker
-  и локальных проверок;
+- Node.js 24 и pnpm 9 или 10;
+- Python 3.12 и [uv](https://docs.astral.sh/uv/);
 - OpenSSL для генерации JWT-ключей.
 
 ## Первый запуск
 
-Из корня репозитория создайте локальную конфигурацию и пару RSA-ключей:
+Подготовьте локальную конфигурацию, JWT-ключи, зависимости и pre-commit hooks:
 
 ```bash
-cp .env.template .env
-
-mkdir -p backend/light_task/certs
-openssl genrsa -out backend/light_task/certs/jwt-private.pem 2048
-openssl rsa \
-  -in backend/light_task/certs/jwt-private.pem \
-  -pubout \
-  -out backend/light_task/certs/jwt-public.pem
+task setup
 ```
 
-Запустите backend-инфраструктуру:
+Запустите dev-окружение и frontend:
 
 ```bash
-docker compose -f docker-compose.dev.yml up --build
+task dev
 ```
 
-В отдельном терминале запустите frontend:
+Docker-сервисы можно поднять отдельно в фоне, а frontend запустить в другом терминале:
 
 ```bash
-cd frontend/light-task-frontend
-pnpm install
-cp .env.template .env
-pnpm dev
+task dev:up
+task dev:frontend
 ```
+
+После `Ctrl+C` Vite остановится, а Docker-сервисы продолжат работу. Для просмотра логов
+и остановки используйте `task dev:logs` и `task dev:down`.
 
 | Сервис | Адрес |
 |---|---|
@@ -120,12 +117,13 @@ publisher, работающие внутри Compose.
 
 ```bash
 # применить миграции
-uv run alembic upgrade head
+task db:migrate
 
 # создать миграцию из изменений SQLAlchemy models
-uv run alembic revision --autogenerate -m "describe change"
+task db:revision MESSAGE="describe change"
 
 # откатить одну ревизию
+cd backend/light_task
 uv run alembic downgrade -1
 ```
 
@@ -138,11 +136,7 @@ uv run alembic downgrade -1
 TypeScript-клиент:
 
 ```bash
-cd backend/light_task
-uv run python scripts/export_openapi.py
-
-cd ../../frontend/light-task-frontend
-pnpm gen:api
+task api:generate
 ```
 
 После генерации в commit добавляются `openapi.json` и изменения в `src/api/client`.

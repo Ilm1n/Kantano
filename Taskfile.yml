@@ -1,0 +1,356 @@
+version: '3'
+
+vars:
+  BACKEND_DIR: backend/light_task
+  FRONTEND_DIR: frontend/light-task-frontend
+  DEV_COMPOSE: docker compose -f docker-compose.dev.yml
+  OBS_COMPOSE: docker compose -f docker-compose.dev.yml -f docker-compose.observability.yml
+  OBS_VERIFY_COMPOSE: docker compose -f docker-compose.dev.yml -f docker-compose.observability.yml -f docker-compose.observability.verify.yml
+  TEST_COMPOSE: docker compose -f docker-compose.test.yml
+
+tasks:
+  default:
+    desc: Показать команды
+    silent: true
+    cmds:
+      - task --list
+
+  doctor:
+    desc: Проверить окружение
+    cmds:
+      - task --version
+      - docker version
+      - docker compose version
+      - uv --version
+      - uv python find 3.12
+      - |
+        node -e "const major = Number(process.versions.node.split('.')[0]); console.log('Node.js ' + process.version); if (major !== 24) { console.error('Требуется Node.js 24'); process.exit(1); }"
+      - |
+        pnpm_version="$(pnpm --version)"
+        echo "pnpm $pnpm_version"
+        case "$pnpm_version" in
+          9.*|10.*) ;;
+          *) echo "Требуется pnpm 9 или 10" >&2; exit 1 ;;
+        esac
+      - openssl version
+
+  setup:
+    desc: Настроить проект
+    summary: |
+      Проверяет инструменты, создаёт отсутствующие локальные env-файлы и JWT-ключи,
+      устанавливает backend/frontend зависимости и pre-commit hooks.
+
+      Существующие env-файлы и приватный JWT-ключ не перезаписываются. Сервисы после
+      setup не запускаются; для старта используйте task dev.
+    cmds:
+      - task: doctor
+      - task: _setup-root-env
+      - task: _setup-frontend-env
+      - task: _setup-certs
+      - uv sync --project {{.BACKEND_DIR}} --frozen --group dev
+      - pnpm --dir {{.FRONTEND_DIR}} install --frozen-lockfile
+      - uv run --project {{.BACKEND_DIR}} pre-commit install
+      - echo "Проект настроен. Запуск — task dev"
+
+  dev:
+    desc: Запустить dev-окружение
+    summary: |
+      Поднимает backend и инфраструктуру из docker-compose.dev.yml в фоне, ждёт
+      readiness и запускает Vite frontend в текущем терминале.
+
+      После Ctrl+C frontend остановится, а Docker-сервисы останутся работать.
+      Остановить их можно командой task dev:down; volumes при этом сохраняются.
+    cmds:
+      - task: dev:up
+      - task: dev:frontend
+
+  dev:up:
+    desc: Поднять dev в фоне
+    cmds:
+      - task: _require-local-config
+      - '{{.DEV_COMPOSE}} up -d --build --wait --remove-orphans'
+
+  dev:frontend:
+    desc: Запустить frontend
+    cmds:
+      - task: _require-local-config
+      - task: _frontend-dev
+
+  dev:down:
+    desc: Остановить dev
+    cmds:
+      - '{{.DEV_COMPOSE}} down --remove-orphans'
+
+  dev:logs:
+    desc: Показать dev-логи
+    cmds:
+      - '{{.DEV_COMPOSE}} logs --tail=200 --follow'
+
+  obs:
+    desc: Запустить observability
+    summary: |
+      Поднимает dev-окружение вместе с Alloy, Prometheus, Loki, Tempo и Grafana,
+      применяет локальные Grafana resources и запускает Vite frontend.
+
+      После Ctrl+C Docker-сервисы остаются работать. Для остановки используйте
+      task obs:down; observability volumes при этом сохраняются.
+    cmds:
+      - task: obs:up
+      - task: dev:frontend
+
+  obs:up:
+    desc: Поднять observability в фоне
+    cmds:
+      - task: _require-local-config
+      - >-
+        {{.OBS_COMPOSE}} up -d --build --wait
+        backend celery-worker outbox-publisher alloy prometheus loki tempo grafana
+      - '{{.OBS_COMPOSE}} run --rm grafana-provision'
+
+  obs:down:
+    desc: Остановить observability
+    cmds:
+      - '{{.OBS_COMPOSE}} down'
+
+  obs:logs:
+    desc: Показать observability-логи
+    cmds:
+      - >-
+        {{.OBS_COMPOSE}} logs --tail=200 --follow
+        backend celery-worker outbox-publisher alloy prometheus loki tempo grafana
+
+  obs:verify:
+    desc: Проверить observability-конфиги
+    summary: |
+      Проверяет объединённую Compose-конфигурацию, локальные конфиги Alloy, Loki и
+      Tempo, а также синтаксис Grafana provisioning assets.
+
+      Команда не запускает приложение, не меняет данные и не доказывает доставку
+      telemetry во внешнюю Grafana Cloud — это проверяется отдельным runtime smoke.
+    cmds:
+      - task: _require-local-config
+      - '{{.OBS_COMPOSE}} config -q'
+      - '{{.OBS_VERIFY_COMPOSE}} config -q'
+      - >-
+        docker run --rm
+        -e POSTGRES_MONITOR_DSN=postgresql://user:pass@db:5432/db
+        -v "{{.TASKFILE_DIR}}/observability/alloy/config.local.alloy:/etc/alloy/config.alloy:ro"
+        grafana/alloy:v1.19.2 validate /etc/alloy/config.alloy
+      - >-
+        docker run --rm --entrypoint /usr/bin/loki
+        -v "{{.TASKFILE_DIR}}/observability/loki/loki-config.yml:/etc/loki/loki-config.yml:ro"
+        grafana/loki:3.5.12
+        '-config.file=/etc/loki/loki-config.yml' '-verify-config'
+      - >-
+        docker run --rm --entrypoint /tempo
+        -v "{{.TASKFILE_DIR}}/observability/tempo/tempo.yml:/etc/tempo/tempo.yml:ro"
+        grafana/tempo:2.8.4
+        '-config.file=/etc/tempo/tempo.yml' '-config.verify=true'
+      - uv run --project {{.BACKEND_DIR}} python -m py_compile observability/grafana/apply.py
+      - >-
+        uv run --project {{.BACKEND_DIR}} python -c
+        "import json; from pathlib import Path; files = ('observability/grafana/alert-rules.json', 'observability/grafana/dashboards/api.json', 'observability/grafana/dashboards/background.json', 'observability/grafana/dashboards/infrastructure.json'); [json.loads(Path(path).read_text(encoding='utf-8')) for path in files]"
+
+  test:
+    desc: Запустить все тесты
+    cmds:
+      - task: test:backend
+      - task: test:frontend
+
+  test:backend:
+    desc: Запустить backend-тесты
+    summary: |
+      Поднимает изолированные PostgreSQL, Redis и RabbitMQ из docker-compose.test.yml,
+      выполняет полный pytest-набор и останавливает тестовые контейнеры.
+
+      Cleanup выполняется и после успешного запуска, и после ошибки. Именованные
+      volumes и локальные dev-данные команда не удаляет.
+    cmds:
+      - defer: { task: _test-down }
+      - task: _test-up
+      - task: _test-backend-run
+
+  test:backend:unit:
+    desc: Запустить unit-тесты backend
+    cmds:
+      - task: _test-backend-unit-run
+
+  test:frontend:
+    desc: Запустить frontend-тесты
+    cmds:
+      - task: _test-frontend-run
+
+  check:
+    desc: Проверить проект
+    summary: |
+      Выполняет полный локальный quality gate: Ruff, format check, Basedpyright,
+      локальную Compose/observability-валидацию, backend/frontend тесты и frontend build.
+
+      Команда не форматирует файлы, не исправляет lint-ошибки и не удаляет данные.
+      Production-конфигурация по-прежнему полностью проверяется в CI.
+    cmds:
+      - task: _backend-quality
+      - task: _compose-verify
+      - task: obs:verify
+      - task: test
+      - task: _frontend-build
+
+  api:generate:
+    desc: Обновить API-клиент
+    summary: |
+      Экспортирует актуальную OpenAPI-схему FastAPI в frontend/openapi.json и затем
+      генерирует TypeScript-клиент. Generated-файлы могут измениться и должны быть
+      проверены перед commit.
+    cmds:
+      - task: _api-export
+      - task: _api-client-generate
+
+  db:migrate:
+    desc: Применить миграции
+    dir: '{{.BACKEND_DIR}}'
+    cmds:
+      - task: _require-local-config
+      - uv run alembic upgrade head
+
+  db:revision:
+    desc: Создать миграцию
+    dir: '{{.BACKEND_DIR}}'
+    summary: |
+      Создаёт Alembic migration из изменений SQLAlchemy models.
+
+      Обязательный параметр: MESSAGE. Пример:
+      task db:revision MESSAGE="add archive flag"
+
+      Сгенерированную миграцию необходимо проверить вручную; база и существующие
+      migrations автоматически не удаляются и не откатываются.
+    requires:
+      vars: [MESSAGE]
+    env:
+      MIGRATION_MESSAGE: '{{.MESSAGE}}'
+    cmds:
+      - task: _require-local-config
+      - uv run alembic revision --autogenerate -m "$MIGRATION_MESSAGE"
+
+  _setup-root-env:
+    internal: true
+    status:
+      - test -f .env
+    cmds:
+      - cp .env.template .env
+
+  _setup-frontend-env:
+    internal: true
+    dir: '{{.FRONTEND_DIR}}'
+    status:
+      - test -f .env
+    cmds:
+      - cp .env.template .env
+
+  _setup-certs:
+    internal: true
+    cmds:
+      - |
+        private_key="{{.BACKEND_DIR}}/certs/jwt-private.pem"
+        public_key="{{.BACKEND_DIR}}/certs/jwt-public.pem"
+
+        if [ ! -f "$private_key" ] && [ -f "$public_key" ]; then
+          echo "Найден публичный JWT-ключ без приватного. Восстановите пару ключей вручную." >&2
+          exit 1
+        fi
+
+        if [ ! -f "$private_key" ]; then
+          mkdir -p "{{.BACKEND_DIR}}/certs"
+          openssl genrsa -out "$private_key" 2048
+        fi
+
+        if [ ! -f "$public_key" ]; then
+          openssl rsa -in "$private_key" -pubout -out "$public_key"
+        fi
+
+        openssl rsa -in "$private_key" -check -noout
+        private_fingerprint="$(openssl rsa -in "$private_key" -pubout -outform DER 2>/dev/null | openssl dgst -sha256)"
+        public_fingerprint="$(openssl pkey -pubin -in "$public_key" -outform DER 2>/dev/null | openssl dgst -sha256)"
+
+        if [ "$private_fingerprint" != "$public_fingerprint" ]; then
+          echo "JWT private/public keys не образуют пару." >&2
+          exit 1
+        fi
+
+  _require-local-config:
+    internal: true
+    preconditions:
+      - sh: test -f .env
+        msg: Локальный .env не найден. Выполните task setup.
+      - sh: test -f {{.FRONTEND_DIR}}/.env
+        msg: Frontend .env не найден. Выполните task setup.
+      - sh: test -f {{.BACKEND_DIR}}/certs/jwt-private.pem
+        msg: Приватный JWT-ключ не найден. Выполните task setup.
+      - sh: test -f {{.BACKEND_DIR}}/certs/jwt-public.pem
+        msg: Публичный JWT-ключ не найден. Выполните task setup.
+
+  _frontend-dev:
+    internal: true
+    dir: '{{.FRONTEND_DIR}}'
+    cmds:
+      - pnpm dev
+
+  _test-up:
+    internal: true
+    cmds:
+      - '{{.TEST_COMPOSE}} up -d --wait'
+
+  _test-down:
+    internal: true
+    cmds:
+      - '{{.TEST_COMPOSE}} down'
+
+  _test-backend-run:
+    internal: true
+    dir: '{{.BACKEND_DIR}}'
+    cmds:
+      - uv run pytest -q
+
+  _test-backend-unit-run:
+    internal: true
+    dir: '{{.BACKEND_DIR}}'
+    cmds:
+      - uv run pytest -q tests/unit
+
+  _test-frontend-run:
+    internal: true
+    dir: '{{.FRONTEND_DIR}}'
+    cmds:
+      - pnpm test:unit
+
+  _backend-quality:
+    internal: true
+    dir: '{{.BACKEND_DIR}}'
+    cmds:
+      - uv run ruff check . ../../observability/fake-email/server.py
+      - uv run ruff format --check . ../../observability/fake-email/server.py
+      - uv run basedpyright
+
+  _compose-verify:
+    internal: true
+    cmds:
+      - task: _require-local-config
+      - '{{.TEST_COMPOSE}} config -q'
+      - '{{.DEV_COMPOSE}} config -q'
+
+  _frontend-build:
+    internal: true
+    dir: '{{.FRONTEND_DIR}}'
+    cmds:
+      - pnpm build
+
+  _api-export:
+    internal: true
+    dir: '{{.BACKEND_DIR}}'
+    cmds:
+      - uv run python scripts/export_openapi.py
+
+  _api-client-generate:
+    internal: true
+    dir: '{{.FRONTEND_DIR}}'
+    cmds:
+      - pnpm gen:api

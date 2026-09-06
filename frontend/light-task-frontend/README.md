@@ -26,22 +26,26 @@ WebSocket-каналы.
 
 ## Запуск
 
-Понадобятся Node.js 24 и pnpm 9.
+Все Task-команды выполняются из корня репозитория. Полный список: `task --list`.
+Подробности о задаче: `task --summary <task>`.
+
+Понадобятся Node.js 24 и pnpm 9 или 10. Из корня репозитория:
 
 ```bash
-pnpm install
-cp .env.template .env
-pnpm dev
+task setup
+task dev
 ```
 
 Frontend откроется на `http://localhost:5173`. При пустом `VITE_API_URL` Vite
 проксирует `/api` и `/ws` в backend на `http://127.0.0.1:8000`.
 
-## Команды
+## Низкоуровневые команды
+
+Для изолированной работы с frontend из этого каталога:
 
 ```bash
-pnpm dev              # development server
-pnpm test:unit        # Vitest
+pnpm dev              # development server без запуска backend
+pnpm test:unit        # однократный прогон Vitest
 pnpm test:unit:watch  # Vitest в watch-режиме
 pnpm build            # vue-tsc + production build
 pnpm preview          # preview каталога dist
@@ -56,11 +60,7 @@ pnpm gen:api          # генерация клиента из openapi.json
 После изменений backend-контракта сначала экспортируйте OpenAPI:
 
 ```bash
-cd ../../backend/light_task
-uv run python scripts/export_openapi.py
-
-cd ../../frontend/light-task-frontend
-pnpm gen:api
+task api:generate
 ```
 
 Каталог `src/api/client` генерируется из `openapi.json`, поэтому ручные изменения в нём

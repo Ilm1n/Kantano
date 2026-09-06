@@ -1,5 +1,8 @@
 # Observability и диагностика
 
+Все Task-команды выполняются из корня репозитория. Полный список: `task --list`.
+Подробности о задаче: `task --summary <task>`.
+
 Kantano использует единый контур метрик, структурированных логов и распределённых
 трассировок. Контур охватывает HTTP API, фоновые процессы, realtime, базы данных,
 очереди и Docker host. Ошибки приложения дополнительно поступают в Sentry.
@@ -136,15 +139,14 @@ Metrics, Logs и Traces. Management token используется сервис�
 
 ## Локальный запуск
 
-Observability stack подключается к основному development Compose вторым файлом:
+Полное dev-окружение с observability и frontend запускается командой:
 
 ```bash
-cp .env.template .env
-docker compose -f docker-compose.dev.yml -f docker-compose.observability.yml \
-  up -d --build --wait backend celery-worker outbox-publisher alloy prometheus loki tempo grafana
-docker compose -f docker-compose.dev.yml -f docker-compose.observability.yml \
-  run --rm grafana-provision
+task obs
 ```
+
+Чтобы поднять только Docker-часть в фоне, используйте `task obs:up`. Остановить стек
+можно через `task obs:down`; observability volumes при этом сохраняются.
 
 `grafana-provision` — одноразовый идемпотентный сервис. Его запускают после постоянных
 сервисов: завершение с кодом `0` является штатным и не означает остановку Grafana.
@@ -162,8 +164,7 @@ docker compose -f docker-compose.dev.yml -f docker-compose.observability.yml \
 
 ```bash
 docker compose -f docker-compose.dev.yml -f docker-compose.observability.yml ps
-docker compose -f docker-compose.dev.yml -f docker-compose.observability.yml \
-  logs --since=5m backend celery-worker outbox-publisher alloy prometheus loki tempo grafana
+task obs:logs
 ```
 
 ## Dashboards
@@ -254,21 +255,16 @@ publisher heartbeat, RabbitMQ ready/unacknowledged messages и worker logs. Reso
 
 ## Проверка конфигурации
 
-Перед деплоем проверяются итоговый Compose и конфигурация Alloy:
+Локальные Compose-конфигурации, Alloy, Loki, Tempo и Grafana assets проверяются одной
+командой:
 
 ```bash
-docker compose -f docker-compose.dev.yml -f docker-compose.observability.yml config -q
-docker compose -f docker-compose.prod.yml config -q
-
-docker run --rm \
-  -v "$PWD/observability/alloy/config.local.alloy:/etc/alloy/config.alloy:ro" \
-  grafana/alloy:v1.19.2 validate /etc/alloy/config.alloy
-
-docker run --rm --env-file .env.alloy \
-  -e POSTGRES_MONITOR_DSN=postgresql://monitor:password@db:5432/lighttask?sslmode=disable \
-  -v "$PWD/observability/alloy/config.prod.alloy:/etc/alloy/config.alloy:ro" \
-  grafana/alloy:v1.19.2 validate /etc/alloy/config.alloy
+task obs:verify
 ```
+
+Production Compose и production Alloy config полностью проверяются в CI перед деплоем.
+`task obs:verify` является статической локальной проверкой и не доказывает доставку
+telemetry во внешнюю Grafana Cloud.
 
 После запуска проверяется не только health status, но и прохождение каждого сигнала:
 

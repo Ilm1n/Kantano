@@ -131,25 +131,42 @@ dashboards, метрики и сценарии диагностики описа
 
 ## Быстрый старт
 
-Для запуска нужны Docker с Compose, Node.js 24, pnpm 9 и OpenSSL.
+В проекте используется [Taskfile](./Taskfile.yml): основные сценарии локальной
+разработки — настройка, запуск dev-окружения, observability, тесты, проверки, миграции
+и генерация API — уже собраны в готовые команды. Не нужно вручную составлять длинные
+команды Docker, `uv` и `pnpm`. Список команд: `task --list`; подробности о сценарии:
+`task --summary <task>`. Точный состав шагов каждой команды можно посмотреть в
+[`Taskfile.yml`](./Taskfile.yml).
 
-### 1. Настройте backend
+Для запуска нужны [Task](https://taskfile.dev/installation/) v3, Docker с Compose,
+Python 3.12 и `uv`, Node.js 24, pnpm 9 или 10 и OpenSSL.
+
+Все Task-команды выполняются из корня репозитория. Полный список: `task --list`.
+Подробности о задаче: `task --summary <task>`.
+
+### 1. Настройте проект
 
 ```bash
-cp .env.template .env
-
-mkdir -p backend/light_task/certs
-openssl genrsa -out backend/light_task/certs/jwt-private.pem 2048
-
-openssl rsa -in backend/light_task/certs/jwt-private.pem -pubout -out backend/light_task/certs/jwt-public.pem
-
-docker compose -f docker-compose.dev.yml up --build
+task setup
 ```
 
-После запуска Compose поднимет PostgreSQL, Redis, RabbitMQ, backend, Celery worker и
-outbox publisher, применит миграции и подготовит локальное хранилище аватаров. Для
-реальной отправки писем в локальном `.env` требуется `LIGHTTASK_CONFIG__RESEND__API_KEY`.
-После запуска доступны:
+Команда создаёт отсутствующие локальные env-файлы и JWT-ключи, устанавливает backend и
+frontend зависимости и настраивает pre-commit hooks. Существующие env-файлы и ключи не
+перезаписываются.
+
+### 2. Запустите приложение
+
+```bash
+task dev
+```
+
+Task поднимет PostgreSQL, Redis, RabbitMQ, backend, Celery worker и outbox publisher в
+Docker, применит миграции, подготовит локальное хранилище аватаров и запустит frontend
+через Vite. После `Ctrl+C` Docker-сервисы останутся работать; остановить их можно через
+`task dev:down`.
+
+Для реальной отправки писем в локальном `.env` требуется
+`LIGHTTASK_CONFIG__RESEND__API_KEY`. После запуска доступны:
 
 - API: `http://localhost:8000/api`;
 - Swagger UI: `http://localhost:8000/docs`;
@@ -157,20 +174,9 @@ outbox publisher, применит миграции и подготовит ло
 - readiness (проверка PostgreSQL): `http://localhost:8000/api/health/ready`.
 
 Yandex OAuth и внешнее S3-хранилище для локальной разработки необязательны.
-Локальный Grafana stack подключается отдельным
-[`docker-compose.observability.yml`](./docker-compose.observability.yml); команды запуска
-и адреса интерфейсов приведены в [руководстве по Observability](./docs/observability.md).
-
-### 2. Запустите frontend
-
-В отдельном терминале:
-
-```bash
-cd frontend/light-task-frontend
-pnpm install
-cp .env.template .env
-pnpm dev
-```
+Локальное окружение вместе с Grafana, Prometheus, Loki, Tempo и Alloy запускается через
+`task obs`. Адреса интерфейсов и диагностические сценарии приведены в
+[руководстве по Observability](./docs/observability.md).
 
 Приложение откроется на `http://localhost:5173`. Vite проксирует `/api` и `/ws` в
 локальный backend, поэтому `VITE_API_URL` можно оставить пустым.
@@ -179,24 +185,16 @@ pnpm dev
 
 ## Проверки
 
-Backend:
-
 ```bash
-docker compose -f docker-compose.test.yml up -d
-cd backend/light_task
-uv sync --group dev
-uv run ruff check .
-uv run ruff format --check .
-uv run basedpyright
-uv run pytest -q
+task check
 ```
 
-Frontend:
+Для целевых прогонов:
 
 ```bash
-cd frontend/light-task-frontend
-pnpm test:unit
-pnpm build
+task test:backend:unit
+task test:backend
+task test:frontend
 ```
 
 Тесты backend по умолчанию используют отдельные PostgreSQL, Redis и RabbitMQ из

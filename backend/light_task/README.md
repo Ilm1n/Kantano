@@ -39,10 +39,14 @@ Prometheus-метрики и OpenTelemetry traces с общими `request_id` �
 
 ## Разработка
 
+Все Task-команды выполняются из корня репозитория. Полный список: `task --list`.
+Подробности о задаче: `task --summary <task>`.
+
 Основной development-режим запускается из корня репозитория:
 
 ```bash
-docker compose -f docker-compose.dev.yml up --build
+task setup
+task dev
 ```
 
 Для запуска backend непосредственно на хосте:
@@ -68,10 +72,8 @@ Backend использует Python 3.12. Конфигурация загруж�
 ## Проверки
 
 ```bash
-uv run ruff check .
-uv run ruff format --check .
-uv run basedpyright
-uv run pytest -q tests/unit
+task test:backend:unit
+task test:backend
 ```
 
 Полный pytest-набор использует отдельные PostgreSQL, Redis и RabbitMQ из
@@ -86,11 +88,10 @@ uv run pytest -q tests/unit
 Frontend-контракт нужно обновлять после изменений API:
 
 ```bash
-uv run python scripts/export_openapi.py
-cd ../../frontend/light-task-frontend
-pnpm gen:api
+task api:generate
 ```
 
-Миграции находятся в `alembic/versions` и применяются командой
-`uv run alembic upgrade head`. В Docker Compose их выполняет отдельный одноразовый
+Миграции находятся в `alembic/versions` и применяются командой `task db:migrate`.
+Новая ревизия создаётся через `task db:revision MESSAGE="describe change"`. В Docker
+Compose миграции выполняет отдельный одноразовый
 сервис `migrations` до запуска backend, Celery worker и outbox publisher.
