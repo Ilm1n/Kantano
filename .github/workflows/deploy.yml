@@ -256,7 +256,7 @@ jobs:
             docker compose -f docker-compose.prod.yml config -q
             docker compose -f docker-compose.prod.yml run --rm --no-deps alloy \
               validate /etc/alloy/config.alloy
-            docker compose -f docker-compose.prod.yml run --rm --no-deps caddy \
+            docker compose -f docker-compose.prod.yml run --rm --no-deps gateway \
               caddy validate --config /etc/caddy/Caddyfile
 
             retry 5 10 docker_login_ghcr
