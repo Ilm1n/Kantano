@@ -276,7 +276,7 @@ jobs:
             retry 10 5 docker compose -f docker-compose.prod.yml exec -T backend curl -fsS http://localhost:8000/api/health/ready
             docker compose -f docker-compose.prod.yml exec -T backend curl -fsS http://localhost:8000/api/projects >/dev/null || true
             retry 10 5 docker compose -f docker-compose.prod.yml exec -T backend sh -c 'curl -fsS http://localhost:8000/metrics | grep -q http_requests_total'
-            retry 10 5 docker compose -f docker-compose.prod.yml exec -T alloy sh -c 'wget -q -O - http://localhost:12345/metrics | grep -q alloy_build_info'
+            retry 10 5 sh -c 'curl -fsS http://127.0.0.1:12345/metrics | grep -q alloy_build_info'
             docker compose -f docker-compose.prod.yml exec -T rabbitmq rabbitmq-diagnostics -q ping
 
             docker run --rm --env-file .env.grafana \
