@@ -254,7 +254,7 @@ prometheus.remote_write "grafana_cloud" {
 }
 
 otelcol.auth.basic "grafana_cloud_traces" {
-  username = sys.env("GRAFANA_CLOUD_TEMPO_USER")
+  username = sys.env("GRAFANA_CLOUD_OTLP_USER")
   password = sys.env("GRAFANA_CLOUD_API_KEY")
 }
 

@@ -144,7 +144,7 @@ jobs:
           GRAFANA_CLOUD_LOKI_URL: http://example.test/loki
           GRAFANA_CLOUD_LOKI_USER: test
           GRAFANA_CLOUD_OTLP_ENDPOINT: http://example.test/otlp
-          GRAFANA_CLOUD_TEMPO_USER: test
+          GRAFANA_CLOUD_OTLP_USER: test
           GRAFANA_CLOUD_API_KEY: test
           IMAGE_REPO_OWNER: test
           SWAGGER_HASH: test
@@ -175,7 +175,7 @@ jobs:
             -e GRAFANA_CLOUD_LOKI_URL=http://example.test/loki \
             -e GRAFANA_CLOUD_LOKI_USER=test \
             -e GRAFANA_CLOUD_OTLP_ENDPOINT=http://example.test/otlp \
-            -e GRAFANA_CLOUD_TEMPO_USER=test \
+            -e GRAFANA_CLOUD_OTLP_USER=test \
             -e GRAFANA_CLOUD_API_KEY=test \
             -v "$PWD/observability/alloy/config.prod.alloy:/etc/alloy/config.alloy:ro" \
             grafana/alloy:v1.19.2 validate /etc/alloy/config.alloy
