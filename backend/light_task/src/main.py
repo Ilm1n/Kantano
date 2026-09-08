@@ -14,6 +14,7 @@ from src.auth.router import router as auth_router
 # модели импортируются для регистрации в metadata
 from src.boards.models import BoardColumn, Task  # noqa: F401
 from src.boards.router import router as board_router
+from src.cache.redis import RedisCache
 from src.config import settings
 from src.db.database import db_helper
 from src.errors import ErrorCode, error_response, normalize_error_detail
@@ -25,6 +26,7 @@ from src.observability.middleware import AccessLogMiddleware, RequestContextMidd
 from src.observability.sentry import capture_exception_once
 from src.observability.tracing import mark_current_span_error
 from src.projects.models import Project, ProjectMember  # noqa: F401
+from src.projects.cache import ProjectReadCache
 from src.projects.router import router as project_router
 from src.registration.models import OutboxEvent, PendingRegistration  # noqa: F401
 from src.registration.router import router as registration_router
@@ -43,6 +45,9 @@ observability = initialize_observability(settings.observability)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # startup
+    cache_backend = RedisCache(settings.cache)
+    await cache_backend.start()
+    app.state.project_read_cache = ProjectReadCache(cache_backend, settings.cache)
     app.state.realtime_runtime = build_realtime_runtime()
     await app.state.realtime_runtime.start()
     logger.info("Application startup")
@@ -50,6 +55,7 @@ async def lifespan(app: FastAPI):
     # shutdown
     logger.info("Application shutdown")
     await app.state.realtime_runtime.stop()
+    await cache_backend.aclose()
     await db_helper.dispose()
     observability.shutdown()
 

@@ -6,6 +6,7 @@ from src.auth.dependencies import get_current_user
 from src.auth.schemas import UserPayload
 from src.db.database import db_helper
 from src.db.unit_of_work import UnitOfWork
+from src.projects.cache import ProjectReadCache, get_project_read_cache
 from src.projects.dto import (
     CreateProjectCommand,
     DeleteProjectCommand,
@@ -48,56 +49,68 @@ def get_project_details_use_case() -> GetProjectDetailsUseCase:
     return GetProjectDetailsUseCase(db_helper.async_session_maker)
 
 
-def get_list_project_members_use_case() -> ListProjectMembersUseCase:
-    return ListProjectMembersUseCase(db_helper.async_session_maker)
+def get_list_project_members_use_case(
+    cache: Annotated[ProjectReadCache, Depends(get_project_read_cache)],
+) -> ListProjectMembersUseCase:
+    return ListProjectMembersUseCase(db_helper.async_session_maker, cache=cache)
 
 
 def get_create_project_use_case(
     event_publisher: Annotated[DomainEventPublisher, Depends(get_event_publisher)],
+    cache: Annotated[ProjectReadCache, Depends(get_project_read_cache)],
 ) -> CreateProjectUseCase:
     dispatcher = ProjectsDomainEventDispatcher(
         db_helper.async_session_maker,
         event_publisher,
+        cache,
     )
     return CreateProjectUseCase(lambda: UnitOfWork(event_dispatcher=dispatcher))
 
 
 def get_update_project_use_case(
     event_publisher: Annotated[DomainEventPublisher, Depends(get_event_publisher)],
+    cache: Annotated[ProjectReadCache, Depends(get_project_read_cache)],
 ) -> UpdateProjectUseCase:
     dispatcher = ProjectsDomainEventDispatcher(
         db_helper.async_session_maker,
         event_publisher,
+        cache,
     )
     return UpdateProjectUseCase(lambda: UnitOfWork(event_dispatcher=dispatcher))
 
 
 def get_delete_project_use_case(
     event_publisher: Annotated[DomainEventPublisher, Depends(get_event_publisher)],
+    cache: Annotated[ProjectReadCache, Depends(get_project_read_cache)],
 ) -> DeleteProjectUseCase:
     dispatcher = ProjectsDomainEventDispatcher(
         db_helper.async_session_maker,
         event_publisher,
+        cache,
     )
     return DeleteProjectUseCase(lambda: UnitOfWork(event_dispatcher=dispatcher))
 
 
 def get_remove_member_use_case(
     event_publisher: Annotated[DomainEventPublisher, Depends(get_event_publisher)],
+    cache: Annotated[ProjectReadCache, Depends(get_project_read_cache)],
 ) -> RemoveMemberUseCase:
     dispatcher = ProjectsDomainEventDispatcher(
         db_helper.async_session_maker,
         event_publisher,
+        cache,
     )
     return RemoveMemberUseCase(lambda: UnitOfWork(event_dispatcher=dispatcher))
 
 
 def get_update_member_role_use_case(
     event_publisher: Annotated[DomainEventPublisher, Depends(get_event_publisher)],
+    cache: Annotated[ProjectReadCache, Depends(get_project_read_cache)],
 ) -> UpdateMemberRoleUseCase:
     dispatcher = ProjectsDomainEventDispatcher(
         db_helper.async_session_maker,
         event_publisher,
+        cache,
     )
     return UpdateMemberRoleUseCase(lambda: UnitOfWork(event_dispatcher=dispatcher))
 

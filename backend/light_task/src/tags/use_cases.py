@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.db.unit_of_work import UnitOfWork
 from src.errors import ErrorCode
 from src.logger import board_logger
+from src.projects.cache import ProjectReadCache
 from src.shared.errors import (
     AppError,
     ConflictError,
@@ -24,6 +25,7 @@ from src.tags.events import TagCreated, TagDeleted, TagUpdated
 from src.tags.models import Tag
 from src.tags.permissions import TagPermissions
 from src.tags.repository import TagRepository
+from src.tags.schemas import TagRead
 
 
 class ListProjectTagsUseCase:
@@ -31,11 +33,13 @@ class ListProjectTagsUseCase:
         self,
         session_factory: Callable[[], AsyncSession],
         permissions: TagPermissions | None = None,
+        cache: ProjectReadCache | None = None,
     ) -> None:
         self._session_factory = session_factory
         self._permissions = permissions or TagPermissions()
+        self._cache = cache
 
-    async def execute(self, query: ListProjectTagsQuery) -> list[Tag]:
+    async def execute(self, query: ListProjectTagsQuery) -> list[TagRead]:
         try:
             async with self._session_factory() as session:
                 repository = TagRepository(session)
@@ -44,7 +48,16 @@ class ListProjectTagsUseCase:
                     user_id=query.actor_user_id,
                 )
                 self._permissions.ensure_can_read_project_tags(member)
-                return await repository.list_project_tags(query.project_id)
+                if self._cache is not None:
+                    cached = await self._cache.get_tags(query.project_id)
+                    if cached is not None:
+                        return cached
+
+                tags = await repository.list_project_tags(query.project_id)
+                result = [TagRead.model_validate(tag) for tag in tags]
+                if self._cache is not None:
+                    await self._cache.set_tags(query.project_id, result)
+                return result
         except AppError:
             raise
         except Exception as exc:

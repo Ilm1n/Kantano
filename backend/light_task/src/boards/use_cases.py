@@ -32,10 +32,12 @@ from src.boards.models import BoardColumn, Task
 from src.boards.ordering import POSITION_GAP, TaskOrdering
 from src.boards.permissions import BoardPermissions
 from src.boards.repository import BoardRepository
+from src.boards.schemas import ColumnRead
 from src.db.unit_of_work import UnitOfWork
 from src.errors import ErrorCode
 from src.logger import board_logger
 from src.observability.tracing import get_tracer
+from src.projects.cache import ProjectReadCache
 from src.shared.errors import (
     AppError,
     BadRequestError,
@@ -52,18 +54,20 @@ class GetProjectBoardUseCase:
         self,
         session_factory: Callable[[], AsyncSession],
         permissions: BoardPermissions | None = None,
+        cache: ProjectReadCache | None = None,
     ) -> None:
         self._session_factory = session_factory
         self._permissions = permissions or BoardPermissions()
+        self._cache = cache
 
-    async def execute(self, query: GetProjectBoardQuery) -> list[BoardColumn]:
+    async def execute(self, query: GetProjectBoardQuery) -> list[ColumnRead]:
         with tracer.start_as_current_span(
             "boards.get_project_board",
             attributes={"project.id": query.project_id},
         ):
             return await self._execute(query)
 
-    async def _execute(self, query: GetProjectBoardQuery) -> list[BoardColumn]:
+    async def _execute(self, query: GetProjectBoardQuery) -> list[ColumnRead]:
         try:
             async with self._session_factory() as session:
                 repository = BoardRepository(session)
@@ -72,7 +76,16 @@ class GetProjectBoardUseCase:
                     user_id=query.actor_user_id,
                 )
                 self._permissions.ensure_project_member_can_read(actor_member=actor_member)
-                return await repository.list_project_columns(query.project_id)
+                if self._cache is not None:
+                    cached = await self._cache.get_board(query.project_id)
+                    if cached is not None:
+                        return cached
+
+                columns = await repository.list_project_columns(query.project_id)
+                result = [ColumnRead.model_validate(column) for column in columns]
+                if self._cache is not None:
+                    await self._cache.set_board(query.project_id, result)
+                return result
         except AppError:
             raise
         except Exception as exc:

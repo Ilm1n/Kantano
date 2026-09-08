@@ -93,6 +93,7 @@ services:
     environment:
       - LIGHTTASK_CONFIG__DB__HOST=db
       - LIGHTTASK_CONFIG__REALTIME__REDIS_URL=redis://redis:6379/0
+      - LIGHTTASK_CONFIG__CACHE__REDIS_URL=redis://redis:6379/0
       - LIGHTTASK_CONFIG__QUEUE__HOST=rabbitmq
       - LIGHTTASK_SKIP_MIGRATIONS=1
     depends_on:

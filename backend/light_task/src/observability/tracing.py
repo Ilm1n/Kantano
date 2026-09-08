@@ -120,5 +120,11 @@ def mark_current_span_error(exc: BaseException | None = None) -> None:
         span.record_exception(exc)
 
 
+def set_current_span_attribute(name: str, value: str | bool | int | float) -> None:
+    span = trace.get_current_span()
+    if span.is_recording():
+        span.set_attribute(name, value)
+
+
 def get_tracer(name: str):
     return trace.get_tracer(name)

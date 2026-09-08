@@ -98,6 +98,12 @@ class ApplicationMetrics:
             ("operation",),
             registry=self.registry,
         )
+        self.cache_operations_total = Counter(
+            "kantano_cache_operations_total",
+            "Cache operations by cache, operation, and result.",
+            ("cache", "operation", "result"),
+            registry=self.registry,
+        )
         self.db_pool_checked_out = Gauge(
             "kantano_db_pool_checked_out_connections",
             "Currently checked out SQLAlchemy pool connections.",
@@ -230,6 +236,15 @@ def record_realtime_connection(kind: str, delta: int) -> None:
 def record_realtime_error(operation: str) -> None:
     if _active_metrics is not None:
         _active_metrics.realtime_errors_total.labels(operation=operation).inc()
+
+
+def record_cache_operation(cache: str, operation: str, result: str) -> None:
+    if _active_metrics is not None:
+        _active_metrics.cache_operations_total.labels(
+            cache=cache,
+            operation=operation,
+            result=result,
+        ).inc()
 
 
 def metric_value(metric: Any, labels: dict[str, str] | None = None) -> float:

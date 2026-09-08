@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.boards.repository import BoardRepository
+from src.projects.cache import ProjectReadCache
 from src.realtimev1.domain_helpers import dump_column, dump_task
 from src.realtimev1.events import RealtimeEventType, RealtimeScope
 from src.realtimev1.publisher import DomainEventPublisher
@@ -60,12 +61,16 @@ class BoardsDomainEventDispatcher:
         self,
         session_factory: Callable[[], AsyncSession],
         event_publisher: DomainEventPublisher,
+        cache: ProjectReadCache | None = None,
     ) -> None:
         self._session_factory = session_factory
         self._event_publisher = event_publisher
+        self._cache = cache
 
     async def dispatch(self, events: Sequence[DomainEvent]) -> None:
         for event in events:
+            if self._cache is not None and event.project_id is not None:
+                await self._cache.invalidate_board(event.project_id)
             if isinstance(event, ColumnCreated):
                 await self._publish_column_created(event)
             if isinstance(event, ColumnUpdated):

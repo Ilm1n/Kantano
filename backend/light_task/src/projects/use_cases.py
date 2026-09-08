@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.db.unit_of_work import UnitOfWork
 from src.errors import ErrorCode
 from src.logger import project_logger
+from src.projects.cache import ProjectReadCache
 from src.projects.constants import ProjectRole
 from src.projects.dto import (
     CreateProjectCommand,
@@ -29,7 +30,7 @@ from src.projects.events import (
 from src.projects.models import ProjectMember
 from src.projects.permissions import ProjectMemberPolicy
 from src.projects.repository import ProjectRepository
-from src.projects.schemas import ProjectRead
+from src.projects.schemas import ProjectMemberRead, ProjectRead
 from src.shared.errors import AppError, DatabaseError, NotFoundError
 from src.tags.constants import DEFAULT_PROJECT_TAGS
 from src.tags.models import Tag
@@ -111,11 +112,13 @@ class ListProjectMembersUseCase:
         self,
         session_factory: Callable[[], AsyncSession],
         policy: ProjectMemberPolicy | None = None,
+        cache: ProjectReadCache | None = None,
     ) -> None:
         self._session_factory = session_factory
         self._policy = policy or ProjectMemberPolicy()
+        self._cache = cache
 
-    async def execute(self, query: ListProjectMembersQuery) -> list[ProjectMember]:
+    async def execute(self, query: ListProjectMembersQuery) -> list[ProjectMemberRead]:
         try:
             async with self._session_factory() as session:
                 repository = ProjectRepository(session)
@@ -124,7 +127,16 @@ class ListProjectMembersUseCase:
                     user_id=query.actor_user_id,
                 )
                 self._policy.ensure_project_member_can_read(requester_member=requester_member)
-                return await repository.list_project_members(query.project_id)
+                if self._cache is not None:
+                    cached = await self._cache.get_members(query.project_id)
+                    if cached is not None:
+                        return cached
+
+                members = await repository.list_project_members(query.project_id)
+                result = [ProjectMemberRead.model_validate(member) for member in members]
+                if self._cache is not None:
+                    await self._cache.set_members(query.project_id, result)
+                return result
         except AppError:
             raise
         except Exception as exc:

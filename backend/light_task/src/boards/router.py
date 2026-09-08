@@ -45,6 +45,7 @@ from src.boards.use_cases import (
 )
 from src.db.database import db_helper
 from src.db.unit_of_work import UnitOfWork
+from src.projects.cache import ProjectReadCache, get_project_read_cache
 from src.projects.dependencies import check_project_member
 from src.realtimev1.dependencies import get_client_mutation_id, get_event_publisher
 from src.realtimev1.publisher import DomainEventPublisher
@@ -52,8 +53,10 @@ from src.realtimev1.publisher import DomainEventPublisher
 router = APIRouter(tags=["Boards"])
 
 
-def get_project_board_use_case() -> GetProjectBoardUseCase:
-    return GetProjectBoardUseCase(db_helper.async_session_maker)
+def get_project_board_use_case(
+    cache: Annotated[ProjectReadCache, Depends(get_project_read_cache)],
+) -> GetProjectBoardUseCase:
+    return GetProjectBoardUseCase(db_helper.async_session_maker, cache=cache)
 
 
 def get_list_project_tasks_use_case() -> ListProjectTasksUseCase:
@@ -66,80 +69,96 @@ def get_task_details_use_case() -> GetTaskDetailsUseCase:
 
 def get_create_column_use_case(
     event_publisher: Annotated[DomainEventPublisher, Depends(get_event_publisher)],
+    cache: Annotated[ProjectReadCache, Depends(get_project_read_cache)],
 ) -> CreateColumnUseCase:
     dispatcher = BoardsDomainEventDispatcher(
         db_helper.async_session_maker,
         event_publisher,
+        cache,
     )
     return CreateColumnUseCase(lambda: UnitOfWork(event_dispatcher=dispatcher))
 
 
 def get_update_column_use_case(
     event_publisher: Annotated[DomainEventPublisher, Depends(get_event_publisher)],
+    cache: Annotated[ProjectReadCache, Depends(get_project_read_cache)],
 ) -> UpdateColumnUseCase:
     dispatcher = BoardsDomainEventDispatcher(
         db_helper.async_session_maker,
         event_publisher,
+        cache,
     )
     return UpdateColumnUseCase(lambda: UnitOfWork(event_dispatcher=dispatcher))
 
 
 def get_delete_column_use_case(
     event_publisher: Annotated[DomainEventPublisher, Depends(get_event_publisher)],
+    cache: Annotated[ProjectReadCache, Depends(get_project_read_cache)],
 ) -> DeleteColumnUseCase:
     dispatcher = BoardsDomainEventDispatcher(
         db_helper.async_session_maker,
         event_publisher,
+        cache,
     )
     return DeleteColumnUseCase(lambda: UnitOfWork(event_dispatcher=dispatcher))
 
 
 def get_reorder_columns_use_case(
     event_publisher: Annotated[DomainEventPublisher, Depends(get_event_publisher)],
+    cache: Annotated[ProjectReadCache, Depends(get_project_read_cache)],
 ) -> ReorderColumnsUseCase:
     dispatcher = BoardsDomainEventDispatcher(
         db_helper.async_session_maker,
         event_publisher,
+        cache,
     )
     return ReorderColumnsUseCase(lambda: UnitOfWork(event_dispatcher=dispatcher))
 
 
 def get_create_task_use_case(
     event_publisher: Annotated[DomainEventPublisher, Depends(get_event_publisher)],
+    cache: Annotated[ProjectReadCache, Depends(get_project_read_cache)],
 ) -> CreateTaskUseCase:
     dispatcher = BoardsDomainEventDispatcher(
         db_helper.async_session_maker,
         event_publisher,
+        cache,
     )
     return CreateTaskUseCase(lambda: UnitOfWork(event_dispatcher=dispatcher))
 
 
 def get_move_task_use_case(
     event_publisher: Annotated[DomainEventPublisher, Depends(get_event_publisher)],
+    cache: Annotated[ProjectReadCache, Depends(get_project_read_cache)],
 ) -> MoveTaskUseCase:
     dispatcher = BoardsDomainEventDispatcher(
         db_helper.async_session_maker,
         event_publisher,
+        cache,
     )
     return MoveTaskUseCase(lambda: UnitOfWork(event_dispatcher=dispatcher))
 
 
 def get_update_task_use_case(
     event_publisher: Annotated[DomainEventPublisher, Depends(get_event_publisher)],
+    cache: Annotated[ProjectReadCache, Depends(get_project_read_cache)],
 ) -> UpdateTaskUseCase:
     dispatcher = BoardsDomainEventDispatcher(
         db_helper.async_session_maker,
         event_publisher,
+        cache,
     )
     return UpdateTaskUseCase(lambda: UnitOfWork(event_dispatcher=dispatcher))
 
 
 def get_delete_task_use_case(
     event_publisher: Annotated[DomainEventPublisher, Depends(get_event_publisher)],
+    cache: Annotated[ProjectReadCache, Depends(get_project_read_cache)],
 ) -> DeleteTaskUseCase:
     dispatcher = BoardsDomainEventDispatcher(
         db_helper.async_session_maker,
         event_publisher,
+        cache,
     )
     return DeleteTaskUseCase(lambda: UnitOfWork(event_dispatcher=dispatcher))
 

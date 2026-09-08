@@ -77,6 +77,10 @@ def _setup_test_env() -> None:
         "LIGHTTASK_CONFIG__REALTIME__REDIS_URL",
         os.getenv("LIGHTTASK_TEST_REDIS_URL", "redis://127.0.0.1:16379/15"),
     )
+    os.environ.setdefault(
+        "LIGHTTASK_CONFIG__CACHE__REDIS_URL",
+        os.environ["LIGHTTASK_CONFIG__REALTIME__REDIS_URL"],
+    )
     os.environ.setdefault("LIGHTTASK_CONFIG__REALTIME__PRESENCE_TTL_SECONDS", "2")
     os.environ.setdefault("LIGHTTASK_CONFIG__REALTIME__PRESENCE_SYNC_INTERVAL_SECONDS", "1")
     os.environ.setdefault(
@@ -110,14 +114,18 @@ def _validate_test_isolation() -> None:
             "LIGHTTASK_TEST_ALLOW_NON_TEST_DB=1."
         )
 
-    redis_url = os.environ.get("LIGHTTASK_CONFIG__REALTIME__REDIS_URL", "")
-    parsed = urlparse(redis_url)
-    redis_db = parsed.path.lstrip("/")
-    if redis_db in {"", "0"}:
-        raise RuntimeError(
-            "Refusing to run integration tests against Redis DB 0. "
-            "Use a dedicated Redis DB index (for example /15) via LIGHTTASK_TEST_REDIS_URL."
-        )
+    redis_urls = (
+        os.environ.get("LIGHTTASK_CONFIG__REALTIME__REDIS_URL", ""),
+        os.environ.get("LIGHTTASK_CONFIG__CACHE__REDIS_URL", ""),
+    )
+    for redis_url in redis_urls:
+        parsed = urlparse(redis_url)
+        redis_db = parsed.path.lstrip("/")
+        if redis_db in {"", "0"}:
+            raise RuntimeError(
+                "Refusing to run integration tests against Redis DB 0. "
+                "Use a dedicated Redis DB index (for example /15) via LIGHTTASK_TEST_REDIS_URL."
+            )
 
 
 _setup_test_env()

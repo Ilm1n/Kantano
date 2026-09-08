@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.invitations.models import ProjectInvitation
 from src.invitations.repository import InvitationRepository
+from src.projects.cache import ProjectReadCache
 from src.projects.constants import ProjectRole
 from src.realtimev1.domain_helpers import dump_invitation
 from src.realtimev1.events import (
@@ -40,12 +41,20 @@ class InvitationsDomainEventDispatcher:
         self,
         session_factory: Callable[[], AsyncSession],
         event_publisher: DomainEventPublisher,
+        cache: ProjectReadCache | None = None,
     ) -> None:
         self._session_factory = session_factory
         self._event_publisher = event_publisher
+        self._cache = cache
 
     async def dispatch(self, events: Sequence[DomainEvent]) -> None:
         for event in events:
+            if (
+                self._cache is not None
+                and isinstance(event, InvitationAccepted)
+                and event.project_id is not None
+            ):
+                await self._cache.invalidate_members(event.project_id)
             if isinstance(event, InvitationCreated):
                 await self._publish_invitation_created(event)
             if isinstance(event, InvitationDeleted):

@@ -7,7 +7,11 @@ from prometheus_client import generate_latest
 from prometheus_client.parser import text_string_to_metric_families
 from starlette.responses import Response
 
-from src.observability.metrics import ApplicationMetrics
+from src.observability.metrics import (
+    ApplicationMetrics,
+    record_cache_operation,
+    set_active_metrics,
+)
 from src.observability.middleware import RequestContextMiddleware
 
 pytestmark = pytest.mark.no_infra
@@ -105,3 +109,22 @@ def test_metric_registration_supports_isolated_registries() -> None:
     assert 'result="failure"' not in first_text
     assert 'kantano_outbox_publish_total{result="failure"} 1.0' in second_text
     assert 'result="success"' not in second_text
+
+
+def test_cache_metrics_use_bounded_cache_operation_and_result_labels() -> None:
+    application_metrics = ApplicationMetrics()
+    set_active_metrics(application_metrics)
+    try:
+        record_cache_operation("project_board", "get", "hit")
+        record_cache_operation("project_tags", "set", "oversized")
+    finally:
+        set_active_metrics(None)
+
+    exposition = generate_latest(application_metrics.registry).decode()
+    assert (
+        'kantano_cache_operations_total{cache="project_board",operation="get",result="hit"} 1.0'
+    ) in exposition
+    assert (
+        'kantano_cache_operations_total{cache="project_tags",operation="set",result="oversized"} '
+        "1.0"
+    ) in exposition

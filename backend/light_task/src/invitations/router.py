@@ -24,6 +24,7 @@ from src.invitations.use_cases import (
     DeleteInvitationUseCase,
     ListProjectInvitationsUseCase,
 )
+from src.projects.cache import ProjectReadCache, get_project_read_cache
 from src.realtimev1.dependencies import get_client_mutation_id, get_event_publisher
 from src.realtimev1.publisher import DomainEventPublisher
 
@@ -36,30 +37,36 @@ def get_list_project_invitations_use_case() -> ListProjectInvitationsUseCase:
 
 def get_create_invitation_use_case(
     event_publisher: Annotated[DomainEventPublisher, Depends(get_event_publisher)],
+    cache: Annotated[ProjectReadCache, Depends(get_project_read_cache)],
 ) -> CreateInvitationUseCase:
     dispatcher = InvitationsDomainEventDispatcher(
         db_helper.async_session_maker,
         event_publisher,
+        cache,
     )
     return CreateInvitationUseCase(lambda: UnitOfWork(event_dispatcher=dispatcher))
 
 
 def get_delete_invitation_use_case(
     event_publisher: Annotated[DomainEventPublisher, Depends(get_event_publisher)],
+    cache: Annotated[ProjectReadCache, Depends(get_project_read_cache)],
 ) -> DeleteInvitationUseCase:
     dispatcher = InvitationsDomainEventDispatcher(
         db_helper.async_session_maker,
         event_publisher,
+        cache,
     )
     return DeleteInvitationUseCase(lambda: UnitOfWork(event_dispatcher=dispatcher))
 
 
 def get_accept_invitation_use_case(
     event_publisher: Annotated[DomainEventPublisher, Depends(get_event_publisher)],
+    cache: Annotated[ProjectReadCache, Depends(get_project_read_cache)],
 ) -> AcceptInvitationUseCase:
     dispatcher = InvitationsDomainEventDispatcher(
         db_helper.async_session_maker,
         event_publisher,
+        cache,
     )
     return AcceptInvitationUseCase(lambda: UnitOfWork(event_dispatcher=dispatcher))
 

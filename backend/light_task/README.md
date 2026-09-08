@@ -13,6 +13,7 @@ src/
 ├── boards/        # колонки, задачи и ordering
 ├── tags/          # теги проекта
 ├── invitations/   # ссылки-приглашения
+├── cache/         # отказоустойчивый Redis cache backend
 ├── realtimev1/    # WebSocket, Redis Pub/Sub и presence
 ├── observability/  # logging, metrics, tracing и Sentry
 ├── db/            # SQLAlchemy и UnitOfWork

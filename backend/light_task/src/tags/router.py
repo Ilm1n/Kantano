@@ -6,6 +6,7 @@ from src.auth.dependencies import get_current_user
 from src.auth.schemas import UserPayload
 from src.db.database import db_helper
 from src.db.unit_of_work import UnitOfWork
+from src.projects.cache import ProjectReadCache, get_project_read_cache
 from src.realtimev1.dependencies import get_client_mutation_id, get_event_publisher
 from src.realtimev1.publisher import DomainEventPublisher
 from src.tags.dto import (
@@ -26,36 +27,44 @@ from src.tags.use_cases import (
 router = APIRouter(tags=["Tags"])
 
 
-def get_list_project_tags_use_case() -> ListProjectTagsUseCase:
-    return ListProjectTagsUseCase(db_helper.async_session_maker)
+def get_list_project_tags_use_case(
+    cache: Annotated[ProjectReadCache, Depends(get_project_read_cache)],
+) -> ListProjectTagsUseCase:
+    return ListProjectTagsUseCase(db_helper.async_session_maker, cache=cache)
 
 
 def get_create_tag_use_case(
     event_publisher: Annotated[DomainEventPublisher, Depends(get_event_publisher)],
+    cache: Annotated[ProjectReadCache, Depends(get_project_read_cache)],
 ) -> CreateTagUseCase:
     dispatcher = TagsDomainEventDispatcher(
         db_helper.async_session_maker,
         event_publisher,
+        cache,
     )
     return CreateTagUseCase(lambda: UnitOfWork(event_dispatcher=dispatcher))
 
 
 def get_update_tag_use_case(
     event_publisher: Annotated[DomainEventPublisher, Depends(get_event_publisher)],
+    cache: Annotated[ProjectReadCache, Depends(get_project_read_cache)],
 ) -> UpdateTagUseCase:
     dispatcher = TagsDomainEventDispatcher(
         db_helper.async_session_maker,
         event_publisher,
+        cache,
     )
     return UpdateTagUseCase(lambda: UnitOfWork(event_dispatcher=dispatcher))
 
 
 def get_delete_tag_use_case(
     event_publisher: Annotated[DomainEventPublisher, Depends(get_event_publisher)],
+    cache: Annotated[ProjectReadCache, Depends(get_project_read_cache)],
 ) -> DeleteTagUseCase:
     dispatcher = TagsDomainEventDispatcher(
         db_helper.async_session_maker,
         event_publisher,
+        cache,
     )
     return DeleteTagUseCase(lambda: UnitOfWork(event_dispatcher=dispatcher))
 

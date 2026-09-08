@@ -10,7 +10,7 @@ flowchart TB
     gateway["Caddy gateway"]
     api["FastAPI application"]
     postgres[("PostgreSQL")]
-    redis[("Redis Pub/Sub + presence")]
+    redis[("Redis Pub/Sub + presence + cache")]
     outbox[("PostgreSQL outbox")]
     publisher["Outbox publisher"]
     rabbit[("RabbitMQ")]
@@ -42,6 +42,7 @@ Backend разделён на несколько функциональных м
 - `boards` - колонки, задачи, порядок и перемещение карточек;
 - `tags` - теги проекта;
 - `invitations` - создание, просмотр, отзыв и принятие приглашений;
+- `cache` - отказоустойчивый Redis-клиент для кешей чтения;
 - `realtimev1` - WebSocket-подключения, Redis event bus и presence.
 
 Во frontend эти области находятся в `src/modules`. Состояние приложения хранится в
@@ -75,6 +76,20 @@ flowchart LR
   `UnitOfWork`, если не изменяют данные.
 
 Архитектурные тесты проверяют соблюдение этих правил.
+
+## Кеш чтения проекта
+
+Redis кеширует ответы доски, участников и тегов на 60 секунд. Перед каждым чтением
+кеша use case проверяет текущее членство через PostgreSQL. После успешного commit
+domain event dispatcher удаляет только затронутые ключи проекта; ошибки Redis не
+прерывают запрос и приводят к чтению из PostgreSQL.
+
+Ключи имеют префикс `cache:v1:project:{project_id}`. Значения хранятся как JSON и
+проверяются Pydantic при чтении; payload больше 512 KiB не записывается. Кеш можно
+отключить через `LIGHTTASK_CONFIG__CACHE__ENABLED=false`. URL, TTL, лимит значения и
+socket timeout задаются переменными `CACHE__REDIS_URL`, `CACHE__TTL_SECONDS`,
+`CACHE__MAX_VALUE_BYTES` и `CACHE__SOCKET_TIMEOUT_SECONDS` с общим префиксом
+`LIGHTTASK_CONFIG__`.
 
 ## Авторизация
 

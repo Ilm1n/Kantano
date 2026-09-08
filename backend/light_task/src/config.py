@@ -149,6 +149,14 @@ class RealtimeConfig(BaseModel):
     presence_key_prefix: str = "realtime:v1:presence"
 
 
+class CacheConfig(BaseModel):
+    enabled: bool = True
+    redis_url: str = "redis://localhost:6379/0"
+    ttl_seconds: int = Field(default=60, ge=1)
+    max_value_bytes: int = Field(default=512 * 1024, ge=1)
+    socket_timeout_seconds: float = Field(default=0.2, gt=0)
+
+
 class ObservabilityConfig(BaseModel):
     environment: Literal["local", "test", "production"] = "local"
     service_name: str = "kantano-api"
@@ -198,6 +206,7 @@ class Settings(BaseSettings):
     s3: S3Config
     files: Files = Files()
     realtime: RealtimeConfig = RealtimeConfig()
+    cache: CacheConfig = CacheConfig()
     observability: ObservabilityConfig = ObservabilityConfig()
 
 
