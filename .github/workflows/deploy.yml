@@ -288,7 +288,7 @@ jobs:
 
             docker compose -f docker-compose.prod.yml logs --since=5m backend celery-worker outbox-publisher alloy | \
               tee /tmp/kantano-observability-deploy.log
-            if grep -Eiq 'traceback|unhandled exception|fatal|panic' /tmp/kantano-observability-deploy.log; then
+            if grep -Eiq 'traceback|unhandled exception|fatal|panic|exporting failed|dropping data|dropped_items' /tmp/kantano-observability-deploy.log; then
               echo "Unexpected runtime errors found after deployment." >&2
               exit 1
             fi
