@@ -176,11 +176,19 @@ def apply_telegram() -> None:
         },
         "disableResolveMessage": False,
     }
-    status, _ = request("GET", "/api/v1/provisioning/contact-points/kantano-telegram")
-    if status == 404:
+    _, contact_points = request("GET", "/api/v1/provisioning/contact-points")
+    existing = next(
+        (item for item in contact_points if item.get("uid") == contact["uid"]),
+        None,
+    )
+    if existing is None:
         request("POST", "/api/v1/provisioning/contact-points", contact)
     else:
-        request("PUT", "/api/v1/provisioning/contact-points/kantano-telegram", contact)
+        request(
+            "PUT",
+            f"/api/v1/provisioning/contact-points/{existing['uid']}",
+            contact,
+        )
     request(
         "PUT",
         "/api/v1/provisioning/policies",
