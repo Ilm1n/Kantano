@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 from src.config import settings
 from src.db.database import db_helper
 from src.logger import get_logger
+from src.observability.tracing import get_tracer
 from src.projects.constants import ProjectRole
 from src.realtimev1.auth import (
     WsAuthContext,
@@ -29,6 +30,14 @@ from src.realtimev1.events import (
 from src.realtimev1.runtime import RealtimeRuntime
 
 logger = get_logger("src.realtimev1.router")
+tracer = get_tracer(__name__)
+
+_TRACED_PROJECT_MESSAGE_TYPES = {
+    RealtimeEventType.TASK_VIEWING_STARTED,
+    RealtimeEventType.TASK_VIEWING_STOPPED,
+    RealtimeEventType.TASK_EDITING_STARTED,
+    RealtimeEventType.TASK_EDITING_STOPPED,
+}
 
 router = APIRouter(tags=["Realtime"])
 
@@ -43,13 +52,17 @@ async def user_realtime_ws(
     context: WsAuthContext | None = None
     expiry_task: asyncio.Task[None] | None = None
     try:
-        context = await _authenticate_socket(websocket)
-        async with db_helper.async_session_maker() as session:
-            if not await ensure_user_is_active(session, user_id=context.user_id):
-                raise WsAuthError("INACTIVE_USER")
+        with tracer.start_as_current_span(
+            "realtime.websocket.connect",
+            attributes={"realtime.scope": str(RealtimeScope.USER)},
+        ):
+            context = await _authenticate_socket(websocket)
+            async with db_helper.async_session_maker() as session:
+                if not await ensure_user_is_active(session, user_id=context.user_id):
+                    raise WsAuthError("INACTIVE_USER")
 
-        await runtime.connections.register_user(user_id=context.user_id, websocket=websocket)
-        expiry_task = _spawn_expiry_task(websocket, context.expires_at)
+            await runtime.connections.register_user(user_id=context.user_id, websocket=websocket)
+            expiry_task = _spawn_expiry_task(websocket, context.expires_at)
 
         while True:
             message = await websocket.receive_json()
@@ -82,56 +95,74 @@ async def project_realtime_ws(
     expiry_task: asyncio.Task[None] | None = None
 
     try:
-        context = await _authenticate_socket(websocket)
-        async with db_helper.async_session_maker() as session:
-            if not await ensure_user_is_active(session, user_id=context.user_id):
-                raise WsAuthError("INACTIVE_USER")
+        with tracer.start_as_current_span(
+            "realtime.websocket.connect",
+            attributes={"realtime.scope": str(RealtimeScope.PROJECT)},
+        ):
+            context = await _authenticate_socket(websocket)
+            async with db_helper.async_session_maker() as session:
+                if not await ensure_user_is_active(session, user_id=context.user_id):
+                    raise WsAuthError("INACTIVE_USER")
 
-            raw_role = await get_project_role(
-                session,
-                project_id=project_id,
+                raw_role = await get_project_role(
+                    session,
+                    project_id=project_id,
+                    user_id=context.user_id,
+                )
+                if raw_role is None:
+                    raise WsAuthError("PROJECT_ACCESS_DENIED")
+                role = ProjectRole(raw_role)
+
+            await runtime.connections.register_project(
                 user_id=context.user_id,
+                project_id=project_id,
+                role=role,
+                websocket=websocket,
             )
-            if raw_role is None:
-                raise WsAuthError("PROJECT_ACCESS_DENIED")
-            role = ProjectRole(raw_role)
-
-        await runtime.connections.register_project(
-            user_id=context.user_id,
-            project_id=project_id,
-            role=role,
-            websocket=websocket,
-        )
-        expiry_task = _spawn_expiry_task(websocket, context.expires_at)
-        await _send_project_presence_sync(
-            websocket=websocket,
-            runtime=runtime,
-            project_id=project_id,
-        )
-        await _send_initial_presence_sync(
-            websocket=websocket,
-            runtime=runtime,
-            project_id=project_id,
-        )
-        await _publish_project_presence_changed(
-            runtime=runtime,
-            project_id=project_id,
-            actor_user_id=context.user_id,
-            exclude_user_ids=[context.user_id],
-        )
+            expiry_task = _spawn_expiry_task(websocket, context.expires_at)
+            await _send_project_presence_sync(
+                websocket=websocket,
+                runtime=runtime,
+                project_id=project_id,
+            )
+            await _send_initial_presence_sync(
+                websocket=websocket,
+                runtime=runtime,
+                project_id=project_id,
+            )
+            await _publish_project_presence_changed(
+                runtime=runtime,
+                project_id=project_id,
+                actor_user_id=context.user_id,
+                exclude_user_ids=[context.user_id],
+            )
 
         while True:
             message = await websocket.receive_json()
             if _is_ping(message):
                 await websocket.send_json({"type": "pong"})
                 continue
-            await _handle_project_message(
-                websocket=websocket,
-                message=message,
-                runtime=runtime,
-                context=context,
-                project_id=project_id,
-            )
+            message_type = _traced_project_message_type(message)
+            if message_type is None:
+                await _handle_project_message(
+                    websocket=websocket,
+                    message=message,
+                    runtime=runtime,
+                    context=context,
+                    project_id=project_id,
+                )
+                continue
+            with tracer.start_as_current_span(
+                "realtime.websocket.message",
+                attributes={"realtime.event_type": str(message_type)},
+            ):
+                await _handle_project_message(
+                    websocket=websocket,
+                    message=message,
+                    runtime=runtime,
+                    context=context,
+                    project_id=project_id,
+                )
     except WsAuthError as exc:
         logger.warning("Project ws auth failed: %s", str(exc))
         await _safe_close(websocket, reason=str(exc))
@@ -145,17 +176,21 @@ async def project_realtime_ws(
             expiry_task.cancel()
         connection_context = await runtime.connections.unregister(websocket)
         if connection_context and connection_context.project_id is not None:
-            await _cleanup_presence_on_disconnect(
-                runtime=runtime,
-                project_id=connection_context.project_id,
-                user_id=connection_context.user_id,
-                states=connection_context.presence_states,
-            )
-            await _publish_project_presence_changed(
-                runtime=runtime,
-                project_id=connection_context.project_id,
-                actor_user_id=connection_context.user_id,
-            )
+            with tracer.start_as_current_span(
+                "realtime.websocket.disconnect",
+                attributes={"realtime.scope": str(RealtimeScope.PROJECT)},
+            ):
+                await _cleanup_presence_on_disconnect(
+                    runtime=runtime,
+                    project_id=connection_context.project_id,
+                    user_id=connection_context.user_id,
+                    states=connection_context.presence_states,
+                )
+                await _publish_project_presence_changed(
+                    runtime=runtime,
+                    project_id=connection_context.project_id,
+                    actor_user_id=connection_context.user_id,
+                )
 
 
 async def _authenticate_socket(websocket: WebSocket) -> WsAuthContext:
@@ -169,6 +204,16 @@ async def _authenticate_socket(websocket: WebSocket) -> WsAuthContext:
 
     token = parse_auth_message(raw)
     return validate_access_token(token)
+
+
+def _traced_project_message_type(message: Any) -> RealtimeEventType | None:
+    if not isinstance(message, dict):
+        return None
+    try:
+        message_type = RealtimeEventType(message.get("type"))
+    except (TypeError, ValueError):
+        return None
+    return message_type if message_type in _TRACED_PROJECT_MESSAGE_TYPES else None
 
 
 async def _handle_project_message(

@@ -3,8 +3,12 @@ from __future__ import annotations
 import asyncio
 import contextlib
 
+from opentelemetry.context import Context
+
 from src.config import settings
 from src.logger import get_logger
+from src.observability.context import contextualize
+from src.observability.propagation import capture_trace_context, extract_trace_context
 from src.observability.tracing import get_tracer, mark_current_span_error
 from src.projects.constants import ProjectRole
 from src.realtimev1.connection_manager import ConnectionManager
@@ -75,6 +79,7 @@ class RealtimeRuntime:
         logger.info("Realtime runtime stopped")
 
     async def publish(self, message: RealtimeDeliveryMessage) -> None:
+        message = self._with_current_trace_context(message)
         try:
             await self._event_bus.publish(message)
         except Exception as exc:
@@ -85,25 +90,42 @@ class RealtimeRuntime:
             await self.dispatch_local(message)
 
     async def dispatch_local(self, message: RealtimeDeliveryMessage) -> None:
-        await self.consume(message)
+        await self.consume(self._with_current_trace_context(message))
 
     async def consume(self, message: RealtimeDeliveryMessage) -> None:
         if message.envelope.event_type == RealtimeEventType.TASK_PRESENCE_SYNC:
             await self._deliver(message)
             return
 
-        with tracer.start_as_current_span(
-            "realtime.deliver",
-            attributes={
-                "realtime.event_type": str(message.envelope.event_type),
-                "realtime.scope": str(message.envelope.scope),
-            },
-        ):
-            try:
-                await self._deliver(message)
-            except Exception as exc:
-                mark_current_span_error(exc)
-                raise
+        extracted = extract_trace_context(message.trace_context)
+        if not extracted.valid:
+            logger.warning(
+                "Invalid realtime trace context; starting a new trace",
+                extra={"realtime_event_id": message.envelope.event_id},
+            )
+        with contextualize(request_id=extracted.request_id):
+            with tracer.start_as_current_span(
+                "realtime.deliver",
+                context=extracted.context or Context(),
+                attributes={
+                    "realtime.event_type": str(message.envelope.event_type),
+                    "realtime.scope": str(message.envelope.scope),
+                },
+            ):
+                try:
+                    await self._deliver(message)
+                except Exception as exc:
+                    mark_current_span_error(exc)
+                    raise
+
+    @staticmethod
+    def _with_current_trace_context(
+        message: RealtimeDeliveryMessage,
+    ) -> RealtimeDeliveryMessage:
+        trace_context = capture_trace_context()
+        if trace_context is None:
+            return message
+        return message.model_copy(update={"trace_context": trace_context})
 
     async def _deliver(self, message: RealtimeDeliveryMessage) -> None:
         await self.connections.dispatch(message)

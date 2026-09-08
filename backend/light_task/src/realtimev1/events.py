@@ -76,6 +76,7 @@ class RealtimeDeliveryMessage(BaseSchema):
     project_id: int | None = None
     audience: RealtimeAudience = RealtimeAudience.ALL
     exclude_user_ids: list[int] = Field(default_factory=list)
+    trace_context: dict[str, str] | None = None
 
 
 def new_event_envelope(
