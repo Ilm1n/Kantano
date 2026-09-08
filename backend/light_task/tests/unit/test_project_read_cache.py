@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import nullcontext
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
@@ -24,6 +25,8 @@ from src.tags.events import TagDeleted, TagsDomainEventDispatcher
 from src.tags.schemas import TagRead
 from src.tags.use_cases import ListProjectTagsUseCase
 from src.users.schemas import UserCollaborator
+
+pytestmark = pytest.mark.no_infra
 
 
 class FakeRedisClient:
@@ -123,7 +126,20 @@ async def test_project_read_cache_round_trip_ttl_invalidation_and_close(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     client = FakeRedisClient()
+    span_calls: list[tuple[str, dict[str, str]]] = []
+    attribute_calls: list[tuple[str, str]] = []
+
+    class RecordingTracer:
+        def start_as_current_span(self, name: str, *, attributes: dict[str, str]):
+            span_calls.append((name, attributes))
+            return nullcontext()
+
     monkeypatch.setattr("src.cache.redis.redis.from_url", lambda *args, **kwargs: client)
+    monkeypatch.setattr("src.projects.cache.tracer", RecordingTracer())
+    monkeypatch.setattr(
+        "src.projects.cache.set_current_span_attribute",
+        lambda name, value: attribute_calls.append((name, value)),
+    )
     config = _cache_config(ttl_seconds=45)
     backend = RedisCache(config)
     cache = ProjectReadCache(backend, config)
@@ -145,6 +161,14 @@ async def test_project_read_cache_round_trip_ttl_invalidation_and_close(
     assert await cache.get_board(10) == board
     assert client.set_calls[0][0] == "cache:v1:project:10:board"
     assert client.set_calls[0][2] == 45
+    assert span_calls == [
+        ("cache.get", {"cache.name": "project_board", "cache.operation": "get"}),
+        ("cache.get", {"cache.name": "project_board", "cache.operation": "get"}),
+    ]
+    assert attribute_calls == [
+        ("cache.result", "miss"),
+        ("cache.result", "hit"),
+    ]
 
     await cache.invalidate_board(10)
     assert await cache.get_board(10) is None

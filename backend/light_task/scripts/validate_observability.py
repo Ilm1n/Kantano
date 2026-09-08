@@ -177,6 +177,7 @@ def representative_labels(name: str) -> dict[str, str]:
     job = "alloy"
     for prefix, producer in (
         ("http_", "kantano-api"),
+        ("kantano_cache_", "kantano-api"),
         ("kantano_db_", "kantano-api"),
         ("kantano_realtime_", "kantano-api"),
         ("kantano_outbox_", "kantano-outbox-publisher"),
@@ -309,6 +310,7 @@ def check_promtool(items: list[Query]) -> None:
             "Requests / second": [1.0],
             "5xx error ratio": [0.1],
             "Latency by route (p95)": [0.0975],
+            "Cache hit ratio": [0.75],
         }
         cases = []
         for panel in dashboard["panels"]:
@@ -325,11 +327,12 @@ def check_promtool(items: list[Query]) -> None:
                     .replace("$environment", "production")
                     .replace("$job", "kantano-api")
                 )
-                labels = (
-                    '{handler="/items/{id}"}'
-                    if panel["title"] == "Latency by route (p95)"
-                    else "{}"
-                )
+                if panel["title"] == "Latency by route (p95)":
+                    labels = '{handler="/items/{id}"}'
+                elif panel["title"] == "Cache hit ratio":
+                    labels = '{cache="project_board"}'
+                else:
+                    labels = "{}"
                 cases.append(
                     {
                         "expr": expression,
@@ -342,6 +345,17 @@ def check_promtool(items: list[Query]) -> None:
             {"series": f'http_requests_total{{{base},status="{status}"}}', "values": f"0+{step}x10"}
             for status, step in (("2xx", 48), ("4xx", 6), ("5xx", 6))
         ]
+        inputs.extend(
+            {
+                "series": (
+                    "kantano_cache_operations_total{"
+                    f'{base},cache="project_board",operation="get",result="{result}"'
+                    "}"
+                ),
+                "values": f"0+{step}x10",
+            }
+            for result, step in (("hit", 45), ("miss", 15))
+        )
         for boundary in (
             "0.005",
             "0.01",

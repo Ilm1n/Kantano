@@ -149,6 +149,23 @@ def test_unused_exporter_families_are_dropped() -> None:
     assert "http_request_duration_seconds_sum" not in allowlist(config)
 
 
+def test_cache_and_redis_memory_metrics_reach_production() -> None:
+    assert (
+        production_filter({"__name__": "kantano_cache_operations_total", "job": "kantano-api"})
+        is not None
+    )
+    assert (
+        production_filter(
+            {"__name__": "kantano_cache_operations_total", "job": "kantano-celery-worker"}
+        )
+        is None
+    )
+    assert (
+        production_filter({"__name__": "redis_memory_used_bytes", "job": "integrations/redis"})
+        is not None
+    )
+
+
 @pytest.mark.parametrize(
     "expression",
     [

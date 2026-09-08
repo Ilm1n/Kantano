@@ -10,7 +10,7 @@ from src.boards.schemas import ColumnRead
 from src.cache.redis import RedisCache
 from src.config import CacheConfig
 from src.observability.metrics import record_cache_operation
-from src.observability.tracing import set_current_span_attribute
+from src.observability.tracing import get_tracer, set_current_span_attribute
 from src.projects.schemas import ProjectMemberRead
 from src.tags.schemas import TagRead
 
@@ -23,6 +23,7 @@ PROJECT_TAGS_CACHE = "project_tags"
 _BOARD_ADAPTER = TypeAdapter(list[ColumnRead])
 _MEMBERS_ADAPTER = TypeAdapter(list[ProjectMemberRead])
 _TAGS_ADAPTER = TypeAdapter(list[TagRead])
+tracer = get_tracer(__name__)
 
 
 class ProjectReadCache:
@@ -105,24 +106,28 @@ class ProjectReadCache:
         cache_name: str,
         adapter: TypeAdapter[T],
     ) -> T | None:
-        cached = await self._backend.get(key, cache_name=cache_name)
-        if cached.status != "hit" or cached.value is None:
-            if cached.status == "miss":
-                record_cache_operation(cache_name, "get", "miss")
-                set_current_span_attribute("cache.result", "miss")
-            return None
+        with tracer.start_as_current_span(
+            "cache.get",
+            attributes={"cache.name": cache_name, "cache.operation": "get"},
+        ):
+            cached = await self._backend.get(key, cache_name=cache_name)
+            if cached.status != "hit" or cached.value is None:
+                if cached.status == "miss":
+                    record_cache_operation(cache_name, "get", "miss")
+                    set_current_span_attribute("cache.result", "miss")
+                return None
 
-        try:
-            value = adapter.validate_json(cached.value)
-        except (ValidationError, ValueError, orjson.JSONDecodeError):
-            record_cache_operation(cache_name, "get", "invalid")
-            set_current_span_attribute("cache.result", "invalid")
-            await self._backend.delete(key, cache_name=cache_name)
-            return None
+            try:
+                value = adapter.validate_json(cached.value)
+            except (ValidationError, ValueError, orjson.JSONDecodeError):
+                record_cache_operation(cache_name, "get", "invalid")
+                set_current_span_attribute("cache.result", "invalid")
+                await self._backend.delete(key, cache_name=cache_name)
+                return None
 
-        record_cache_operation(cache_name, "get", "hit")
-        set_current_span_attribute("cache.result", "hit")
-        return value
+            record_cache_operation(cache_name, "get", "hit")
+            set_current_span_attribute("cache.result", "hit")
+            return value
 
     async def _set(
         self,

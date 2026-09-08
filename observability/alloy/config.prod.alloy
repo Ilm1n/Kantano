@@ -142,7 +142,7 @@ prometheus.relabel "production_metrics" {
   // Single source of truth. CI derives dependencies from dashboard/alert PromQL.
   rule {
     source_labels = ["__name__"]
-    regex = "container_cpu_cfs_throttled_seconds_total|container_cpu_usage_seconds_total|container_memory_working_set_bytes|container_oom_events_total|http_request_duration_seconds_bucket|http_requests_inprogress|http_requests_total|kantano_celery_task_attempt_duration_seconds_bucket|kantano_celery_task_attempts_total|kantano_celery_task_final_failures_total|kantano_db_pool_available_connections|kantano_db_pool_checked_out_connections|kantano_db_pool_size_connections|kantano_outbox_oldest_created_timestamp_seconds|kantano_outbox_publish_total|kantano_outbox_publisher_last_poll_timestamp_seconds|kantano_outbox_stats_last_update_timestamp_seconds|kantano_outbox_unpublished_events|kantano_realtime_connections|kantano_realtime_errors_total|loki_write_dropped_entries_total|loki_write_sent_entries_total|node_cpu_seconds_total|node_filesystem_avail_bytes|node_filesystem_size_bytes|node_load1|node_memory_MemAvailable_bytes|node_memory_MemTotal_bytes|otelcol_exporter_send_failed_spans_total|otelcol_exporter_sent_spans_total|pg_up|prometheus_remote_storage_samples_failed_total|prometheus_remote_storage_samples_total|rabbitmq_identity_info|rabbitmq_queue_consumers|rabbitmq_queue_messages_ready|rabbitmq_queue_messages_unacked|redis_up|up"
+    regex = "container_cpu_cfs_throttled_seconds_total|container_cpu_usage_seconds_total|container_memory_working_set_bytes|container_oom_events_total|http_request_duration_seconds_bucket|http_requests_inprogress|http_requests_total|kantano_cache_operations_total|kantano_celery_task_attempt_duration_seconds_bucket|kantano_celery_task_attempts_total|kantano_celery_task_final_failures_total|kantano_db_pool_available_connections|kantano_db_pool_checked_out_connections|kantano_db_pool_size_connections|kantano_outbox_oldest_created_timestamp_seconds|kantano_outbox_publish_total|kantano_outbox_publisher_last_poll_timestamp_seconds|kantano_outbox_stats_last_update_timestamp_seconds|kantano_outbox_unpublished_events|kantano_realtime_connections|kantano_realtime_errors_total|loki_write_dropped_entries_total|loki_write_sent_entries_total|node_cpu_seconds_total|node_filesystem_avail_bytes|node_filesystem_size_bytes|node_load1|node_memory_MemAvailable_bytes|node_memory_MemTotal_bytes|otelcol_exporter_send_failed_spans_total|otelcol_exporter_sent_spans_total|pg_up|prometheus_remote_storage_samples_failed_total|prometheus_remote_storage_samples_total|rabbitmq_identity_info|rabbitmq_queue_consumers|rabbitmq_queue_messages_ready|rabbitmq_queue_messages_unacked|redis_memory_used_bytes|redis_up|up"
     action = "keep"
   }
   // END METRIC ALLOWLIST
@@ -151,7 +151,7 @@ prometheus.relabel "production_metrics" {
   // Keep only the process which owns each signal; do not upload duplicate idle gauges.
   rule {
     source_labels = ["job", "__name__"]
-    regex = "kantano-api;(http_.*|kantano_db_pool_.*|kantano_realtime_.*)|kantano-outbox-publisher;kantano_outbox_.*|kantano-celery-worker;kantano_celery_.*"
+    regex = "kantano-api;(http_.*|kantano_cache_.*|kantano_db_pool_.*|kantano_realtime_.*)|kantano-outbox-publisher;kantano_outbox_.*|kantano-celery-worker;kantano_celery_.*"
     target_label = "__tmp_application_owner"
     replacement = "yes"
   }

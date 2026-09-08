@@ -173,7 +173,7 @@ Grafana создаёт папку `Kantano` с тремя dashboards:
 
 | Dashboard | Область диагностики |
 |---|---|
-| `Kantano / API` | Request rate, HTTP statuses, 5xx ratio, latency, in-progress requests, database pool и application logs |
+| `Kantano / API` | Request rate, HTTP statuses, latency, database pool, Redis cache и application logs |
 | `Kantano / Background and realtime` | Outbox backlog и age, publisher/worker health, Celery attempts, RabbitMQ queue и WebSocket activity |
 | `Kantano / Infrastructure and telemetry` | Scrape targets, host/container resources, dependencies, Alloy export и Grafana Cloud quota |
 
@@ -192,6 +192,7 @@ Dashboard variables фильтруют данные по `environment`; API dash
 | `http_requests_total` | Requests только по классу status: 2xx/3xx/4xx/5xx |
 | `http_request_duration_seconds` | Histogram продолжительности HTTP requests по route template (`handler`); без method/status |
 | `http_requests_inprogress` | Выполняющиеся HTTP requests |
+| `kantano_cache_operations_total{cache,operation,result}` | Hit/miss, запись, инвалидация и ошибки трёх project read caches |
 | `kantano_db_pool_*_connections` | Размер, занятые connections и доступная ёмкость pool |
 | `kantano_outbox_unpublished_events` | Текущий outbox backlog |
 | `kantano_outbox_oldest_created_timestamp_seconds` | Timestamp старейшего неопубликованного event |
@@ -217,7 +218,7 @@ Dashboard variables фильтруют данные по `environment`; API dash
 | Application | Только метрики dashboards/alerts. HTTP: counter — `status` классами `2xx`–`5xx`; histogram — `handler`, `le`; in-progress — без HTTP labels. |
 | Node | `cpu`, `filesystem`, `loadavg`, `meminfo`; CPU только `mode="idle"`; filesystem только `/`, без pseudo/ephemeral `fstype`. |
 | cAdvisor | Project `lighttask_prod`, долгоживущие services и четыре используемые families. `name`/`image` удаляются; `id`/`cpu` сохраняются для уникальности. |
-| PostgreSQL / Redis | `pg_up`, `redis_up` и `up`. |
+| PostgreSQL / Redis | Доступность PostgreSQL/Redis и используемая память Redis. |
 | RabbitMQ | Aggregated `/metrics`, четыре используемые families и `up`; per-object metrics отключены. |
 | Alloy | Используемые `otelcol_exporter_*`, `prometheus_remote_storage_*`, `loki_write_*` и `up`. |
 
@@ -266,6 +267,22 @@ Access log содержит нормализованный route, status и `tra
 Tempo trace с FastAPI, SQLAlchemy, Redis и HTTPX spans. Для ответа 5xx связанный Sentry
 event находится по tags `request_id` или `otel_trace_id`. Ожидаемые 4xx в Sentry не
 отправляются; обработанный 5xx и необработанное исключение создают по одному error event.
+
+### Redis-кеш чтения
+
+Кеш используется только маршрутами `/api/projects/{project_id}/columns`, `/members` и
+`/tags`. Маршрут `/api/projects/{project_id}` всегда читает PostgreSQL и не содержит
+cache span. В Tempo кешируемые запросы находятся через TraceQL:
+
+```traceql
+{ resource.service.name = "kantano-api" && span."cache.result" = "hit" }
+```
+
+Span `cache.get` содержит `cache.name` (`project_board`, `project_members` или
+`project_tags`), `cache.operation=get` и `cache.result`. На hit перед ним остаётся один
+обязательный SQL span проверки членства; на miss после него видны SQL spans загрузки и
+Redis SET. Состояние кеша в целом показывают панели `Cache hit ratio`, `Cache operations`,
+`Cached routes p95` и `Redis memory` в dashboard `Kantano / API`.
 
 Trace регистрации продолжается через `OutboxEvent.trace_context`, publisher span, W3C
 headers сообщения RabbitMQ и Celery consumer span. Фоновые логи сохраняют исходный
