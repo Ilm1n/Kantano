@@ -189,8 +189,8 @@ Dashboard variables фильтруют данные по `environment`; API dash
 
 | Метрика | Семантика |
 |---|---|
-| `http_requests_total` | Requests по route template, method и status |
-| `http_request_duration_seconds` | Histogram продолжительности HTTP requests |
+| `http_requests_total` | Requests только по классу status: 2xx/3xx/4xx/5xx |
+| `http_request_duration_seconds` | Histogram продолжительности HTTP requests по route template (`handler`); без method/status |
 | `http_requests_inprogress` | Выполняющиеся HTTP requests |
 | `kantano_db_pool_*_connections` | Размер, занятые connections и доступная ёмкость pool |
 | `kantano_outbox_unpublished_events` | Текущий outbox backlog |
@@ -203,6 +203,55 @@ Dashboard variables фильтруют данные по `environment`; API dash
 | `kantano_celery_task_attempt_duration_seconds` | Продолжительность одной попытки |
 | `kantano_realtime_connections{kind}` | Активные user/project WebSocket connections |
 | `kantano_realtime_errors_total{operation}` | Ошибки realtime publication и delivery |
+
+## Production metrics contract
+
+Все scrapes проходят через `prometheus.relabel.production_metrics` перед
+`prometheus.remote_write.grafana_cloud`. Allowlist находится между маркерами
+`BEGIN METRIC ALLOWLIST` и `END METRIC ALLOWLIST` в `config.prod.alloy`.
+
+### Политика сбора
+
+| Источник | Фильтрация |
+|---|---|
+| Application | Только метрики dashboards/alerts. HTTP: counter — `status` классами `2xx`–`5xx`; histogram — `handler`, `le`; in-progress — без HTTP labels. |
+| Node | `cpu`, `filesystem`, `loadavg`, `meminfo`; CPU только `mode="idle"`; filesystem только `/`, без pseudo/ephemeral `fstype`. |
+| cAdvisor | Project `lighttask_prod`, долгоживущие services и четыре используемые families. `name`/`image` удаляются; `id`/`cpu` сохраняются для уникальности. |
+| PostgreSQL / Redis | `pg_up`, `redis_up` и `up`. |
+| RabbitMQ | Aggregated `/metrics`, четыре используемые families и `up`; per-object metrics отключены. |
+| Alloy | Используемые `otelcol_exporter_*`, `prometheus_remote_storage_*`, `loki_write_*` и `up`. |
+
+`up` разрешён для девяти production jobs. Неиспользуемые families, `*_created`, histogram
+`*_sum` и `*_count` отбрасываются. HTTP histogram buckets не изменены.
+
+`grafanacloud_*` читаются из Grafana Cloud usage datasource и указаны в валидаторе как
+external exceptions; VPS их не отправляет.
+
+### Изменение контракта
+
+1. Обновить instrumentation, dashboard/alert и allowlist.
+2. Выполнить проверки:
+
+   ```bash
+   uv run --project backend/light_task python backend/light_task/scripts/validate_observability.py --inventory
+   task obs:verify
+   ```
+
+Валидатор сверяет PromQL с allowlist, отклоняет неизвестные expressions/datasources и обход
+production-фильтра. Изменения из Grafana UI необходимо экспортировать в репозиторий.
+
+Disk policy предполагает размещение persistent data на `/`. Для отдельного mountpoint нужно
+обновить одновременно relabel rules и PromQL.
+
+## Production trace policy
+
+| Suppression | Tracing сохраняется |
+|---|---|
+| Empty outbox SELECT, statistics query, presence heartbeat и background snapshot | Publish/dispatch, provider HTTP, realtime delivery и errors |
+
+Sampler: `ParentBased(TraceIdRatioBased(rate))`. Переменная
+`LIGHTTASK_CONFIG__OBSERVABILITY__SAMPLING_RATE`, default `1.0`; значения `0.5`, `0.25` и
+`0.1` сохраняют примерно 50%, 25% и 10% root traces.
 
 ## Корреляция запроса
 

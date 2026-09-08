@@ -114,6 +114,9 @@ jobs:
       - name: Sync Dependencies
         run: uv sync --group dev
 
+      - name: Validate production metrics contract
+        run: uv run python scripts/validate_observability.py --promtool
+
       - name: Run Ruff Linter Check
         run: uv run ruff check . ../../observability/fake-email/server.py
 

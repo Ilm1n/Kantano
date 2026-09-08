@@ -128,6 +128,17 @@ tasks:
       Команда не запускает приложение, не меняет данные и не доказывает доставку
       telemetry во внешнюю Grafana Cloud — это проверяется отдельным runtime smoke.
     cmds:
+      - uv run --project {{.BACKEND_DIR}} python backend/light_task/scripts/validate_observability.py --promtool
+      - >-
+        docker run --rm
+        -e POSTGRES_MONITOR_DSN=postgresql://user:pass@db:5432/db
+        -e GRAFANA_CLOUD_PROMETHEUS_URL=http://example.test/prometheus
+        -e GRAFANA_CLOUD_LOKI_URL=http://example.test/loki
+        -e GRAFANA_CLOUD_OTLP_ENDPOINT=http://example.test/otlp
+        -e GRAFANA_CLOUD_PROMETHEUS_USER=test -e GRAFANA_CLOUD_LOKI_USER=test
+        -e GRAFANA_CLOUD_TEMPO_USER=test -e GRAFANA_CLOUD_API_KEY=test
+        -v "{{.TASKFILE_DIR}}/observability/alloy/config.prod.alloy:/etc/alloy/config.alloy:ro"
+        grafana/alloy:v1.19.2 validate /etc/alloy/config.alloy
       - task: _require-local-config
       - '{{.OBS_COMPOSE}} config -q'
       - '{{.OBS_VERIFY_COMPOSE}} config -q'

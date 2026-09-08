@@ -39,6 +39,7 @@ dependencies = [
 dev = [
     "basedpyright>=1.39.8",
     "pre-commit>=4.6.0",
+    "promql-parser>=0.10.0",
     "pytest>=8.4.2",
     "pytest-asyncio>=1.2.0",
     "pytest-cov>=7.0.0",

@@ -21,6 +21,9 @@ jobs:
       image_repo_owner: ${{ steps.vars.outputs.image_repo_owner }}
     steps:
       - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v7
+      - name: Validate production metrics contract before building
+        run: uv run --project backend/light_task python backend/light_task/scripts/validate_observability.py --promtool
       - name: Get image metadata
         id: vars
         run: |

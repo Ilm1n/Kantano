@@ -76,12 +76,14 @@ loki.write "grafana_cloud" {
 }
 
 prometheus.exporter.unix "host" {
+  set_collectors = ["cpu", "filesystem", "loadavg", "meminfo"]
   rootfs_path = "/host/root"
   procfs_path = "/host/proc"
   sysfs_path  = "/host/sys"
 }
 
 prometheus.exporter.postgres "database" {
+  disable_settings_metrics = true
   data_source_names = [sys.env("POSTGRES_MONITOR_DSN")]
 }
 
@@ -91,6 +93,20 @@ prometheus.exporter.redis "cache" {
 
 prometheus.exporter.cadvisor "containers" {
   docker_host = "unix:///var/run/docker.sock"
+  enabled_metrics = ["cpu", "memory", "oom_event"]
+  disabled_metrics = [
+    "advtcp", "app", "cpu_topology", "cpuLoad", "cpuset", "disk", "diskIO",
+    "hugetlb", "memory_numa", "network", "percpu", "perf_event", "process",
+    "referenced_memory", "resctrl", "sched", "tcp", "udp",
+  ]
+  docker_only = true
+  disable_root_cgroup_stats = true
+  store_container_labels = false
+  allowlisted_container_labels = [
+    "com.docker.compose.project",
+    "com.docker.compose.service",
+    "com.docker.compose.container-number",
+  ]
 }
 
 prometheus.scrape "application" {
@@ -102,7 +118,7 @@ prometheus.scrape "application" {
   metrics_path    = "/metrics"
   scrape_interval = "30s"
   scrape_timeout  = "10s"
-  forward_to      = [prometheus.remote_write.grafana_cloud.receiver]
+  forward_to      = [prometheus.relabel.production_metrics.receiver]
 }
 
 prometheus.scrape "infrastructure" {
@@ -118,10 +134,95 @@ prometheus.scrape "infrastructure" {
   )
   scrape_interval = "60s"
   scrape_timeout  = "10s"
-  forward_to      = [prometheus.relabel.infrastructure_environment.receiver]
+  forward_to      = [prometheus.relabel.production_metrics.receiver]
 }
 
-prometheus.relabel "infrastructure_environment" {
+prometheus.relabel "production_metrics" {
+  // BEGIN METRIC ALLOWLIST
+  // Single source of truth. CI derives dependencies from dashboard/alert PromQL.
+  rule {
+    source_labels = ["__name__"]
+    regex = "container_cpu_cfs_throttled_seconds_total|container_cpu_usage_seconds_total|container_memory_working_set_bytes|container_oom_events_total|http_request_duration_seconds_bucket|http_requests_inprogress|http_requests_total|kantano_celery_task_attempt_duration_seconds_bucket|kantano_celery_task_attempts_total|kantano_celery_task_final_failures_total|kantano_db_pool_available_connections|kantano_db_pool_checked_out_connections|kantano_db_pool_size_connections|kantano_outbox_oldest_created_timestamp_seconds|kantano_outbox_publish_total|kantano_outbox_publisher_last_poll_timestamp_seconds|kantano_outbox_stats_last_update_timestamp_seconds|kantano_outbox_unpublished_events|kantano_realtime_connections|kantano_realtime_errors_total|loki_write_dropped_entries_total|loki_write_sent_entries_total|node_cpu_seconds_total|node_filesystem_avail_bytes|node_filesystem_size_bytes|node_load1|node_memory_MemAvailable_bytes|node_memory_MemTotal_bytes|otelcol_exporter_queue_size|otelcol_exporter_send_failed_spans_total|otelcol_exporter_sent_spans_total|pg_up|prometheus_remote_storage_samples_failed_total|prometheus_remote_storage_samples_pending|prometheus_remote_storage_samples_total|rabbitmq_identity_info|rabbitmq_queue_consumers|rabbitmq_queue_messages_ready|rabbitmq_queue_messages_unacked|redis_up|up"
+    action = "keep"
+  }
+  // END METRIC ALLOWLIST
+
+  // Each application process creates a shared registry, including unused zero gauges.
+  // Keep only the process which owns each signal; do not upload duplicate idle gauges.
+  rule {
+    source_labels = ["job", "__name__"]
+    regex = "kantano-api;(http_.*|kantano_db_pool_.*|kantano_realtime_.*)|kantano-outbox-publisher;kantano_outbox_.*|kantano-celery-worker;kantano_celery_.*"
+    target_label = "__tmp_application_owner"
+    replacement = "yes"
+  }
+  rule {
+    source_labels = ["__name__", "__tmp_application_owner"]
+    regex = "(http_.*|kantano_.*);"
+    action = "drop"
+  }
+
+  // Restrict every sample (including up) to the nine known scrape jobs.
+  rule {
+    source_labels = ["job"]
+    regex = "kantano-api|kantano-outbox-publisher|kantano-celery-worker|integrations/unix|integrations/postgres|integrations/redis|integrations/cadvisor|rabbitmq|alloy"
+    action = "keep"
+  }
+  rule {
+    source_labels = ["__name__", "mode"]
+    regex = "node_cpu_seconds_total;idle"
+    target_label = "__tmp_idle"
+    replacement = "yes"
+  }
+  rule {
+    source_labels = ["__name__", "__tmp_idle"]
+    regex = "node_cpu_seconds_total;"
+    action = "drop"
+  }
+  rule {
+    source_labels = ["__name__", "mountpoint"]
+    regex = "node_filesystem_(avail|size)_bytes;/"
+    target_label = "__tmp_root"
+    replacement = "yes"
+  }
+  rule {
+    source_labels = ["__name__", "__tmp_root"]
+    regex = "node_filesystem_(avail|size)_bytes;"
+    action = "drop"
+  }
+  rule {
+    source_labels = ["__name__", "fstype"]
+    regex = "node_filesystem_(avail|size)_bytes;(tmpfs|ramfs|overlay|squashfs|proc|sysfs|devtmpfs|cgroup2?|nsfs|autofs|tracefs|debugfs|fuse.*)"
+    action = "drop"
+  }
+  rule {
+    source_labels = ["container_label_com_docker_compose_project", "container_label_com_docker_compose_service"]
+    regex = "lighttask_prod;(gateway|db|redis|rabbitmq|backend|celery-worker|outbox-publisher|alloy)"
+    target_label = "__tmp_stack"
+    replacement = "yes"
+  }
+  rule {
+    source_labels = ["__name__", "__tmp_stack"]
+    regex = "container_.*;"
+    action = "drop"
+  }
+  // Embedded exporter instance defaults may contain runtime Alloy hostnames.
+  rule {
+    source_labels = ["job"]
+    regex = "(integrations/.*)"
+    target_label = "instance"
+    replacement = "$1"
+  }
+  // Keep id and cpu: distinct containers/CPU series must never collapse.
+  // Runtime name/image and filesystem device are unused dimensions; id still
+  // prevents cAdvisor series from collapsing during a rolling Compose recreate.
+  rule {
+    action = "labeldrop"
+    regex = "device|image|name"
+  }
+  rule {
+    action = "labeldrop"
+    regex = "__tmp_.*"
+  }
   rule {
     target_label = "environment"
     replacement  = "production"

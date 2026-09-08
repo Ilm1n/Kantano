@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any, cast
 
 import redis.asyncio as redis
+from opentelemetry.instrumentation.utils import suppress_instrumentation
 
 from src.logger import get_logger
 
@@ -106,11 +107,14 @@ class PresenceService:
             user_id=user_id,
         )
         try:
-            await client.expire(key, self._ttl_seconds)
+            with suppress_instrumentation():
+                await client.expire(key, self._ttl_seconds)
         except Exception as exc:
             await self._mark_unavailable(operation="heartbeat", exc=exc)
 
-    async def snapshot(self, *, project_id: int) -> list[PresenceSnapshotItem]:
+    async def snapshot(
+        self, *, project_id: int, background: bool = False
+    ) -> list[PresenceSnapshotItem]:
         client = await self._ensure_client(operation="snapshot")
         if not client:
             return []
@@ -120,12 +124,14 @@ class PresenceService:
         )
 
         try:
-            async for key in client.scan_iter(match=match_pattern):
-                parsed = self._parse_key(key)
-                if not parsed:
-                    continue
-                task_id, mode, user_id = parsed
-                grouped[task_id][mode].add(user_id)
+            # Keep reconnect probes and error handling outside suppression.
+            with suppress_instrumentation() if background else contextlib.nullcontext():
+                async for key in client.scan_iter(match=match_pattern):
+                    parsed = self._parse_key(key)
+                    if not parsed:
+                        continue
+                    task_id, mode, user_id = parsed
+                    grouped[task_id][mode].add(user_id)
         except Exception as exc:
             await self._mark_unavailable(operation="snapshot", exc=exc)
             return []

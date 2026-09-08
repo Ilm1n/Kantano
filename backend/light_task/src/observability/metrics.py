@@ -126,7 +126,7 @@ class ApplicationMetrics:
         if self._instrumentator is not None:
             return
         instrumentator = Instrumentator(
-            should_group_status_codes=False,
+            should_group_status_codes=True,
             should_ignore_untemplated=False,
             should_group_untemplated=True,
             should_instrument_requests_inprogress=False,
@@ -134,14 +134,14 @@ class ApplicationMetrics:
             registry=self.registry,
         )
         request_counter = metrics.requests(
-            should_include_handler=True,
-            should_include_method=True,
+            should_include_handler=False,
+            should_include_method=False,
             should_include_status=True,
             registry=self.registry,
         )
         latency = metrics.latency(
             should_include_handler=True,
-            should_include_method=True,
+            should_include_method=False,
             should_include_status=False,
             buckets=HTTP_DURATION_BUCKETS,
             registry=self.registry,

@@ -183,7 +183,7 @@ class RealtimeRuntime:
                 continue
             project_ids = await self.connections.active_project_ids()
             for project_id in project_ids:
-                snapshot = await self.presence.snapshot(project_id=project_id)
+                snapshot = await self.presence.snapshot(project_id=project_id, background=True)
                 payload = {
                     "items": [
                         {

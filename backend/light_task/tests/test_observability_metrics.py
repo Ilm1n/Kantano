@@ -4,6 +4,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from prometheus_client import generate_latest
+from prometheus_client.parser import text_string_to_metric_families
+from starlette.responses import Response
 
 from src.observability.metrics import ApplicationMetrics
 from src.observability.middleware import RequestContextMiddleware
@@ -22,6 +24,10 @@ def test_http_metrics_use_route_templates_status_and_expected_buckets() -> None:
     async def health() -> dict[str, str]:
         return {"status": "ok"}
 
+    @app.get("/status/{code}")
+    async def status(code: int) -> Response:
+        return Response(status_code=code)
+
     application_metrics = ApplicationMetrics()
     application_metrics.instrument_fastapi(app)
 
@@ -30,10 +36,38 @@ def test_http_metrics_use_route_templates_status_and_expected_buckets() -> None:
         assert client.get("/items/202").json() == {"item_id": 202}
         assert client.get("/unknown/303").status_code == 404
         assert client.get("/api/health").status_code == 200
+        for code in (201, 204, 302, 400, 401, 422, 500, 503):
+            assert client.get(f"/status/{code}", follow_redirects=False).status_code == code
         exposition = client.get("/metrics").text
 
-    assert 'handler="/items/{item_id}",method="GET",status="200"' in exposition
-    assert 'handler="none",method="GET",status="404"' in exposition
+    samples = [s for family in text_string_to_metric_families(exposition) for s in family.samples]
+    requests = [s for s in samples if s.name == "http_requests_total"]
+    assert all(set(s.labels) == {"status"} for s in requests)
+    assert {s.labels["status"]: s.value for s in requests} == {
+        "2xx": 4,
+        "3xx": 1,
+        "4xx": 4,
+        "5xx": 2,
+    }
+    buckets = [s for s in samples if s.name == "http_request_duration_seconds_bucket"]
+    assert all(set(s.labels) == {"handler", "le"} for s in buckets)
+    assert {s.labels["handler"] for s in buckets} == {"/items/{item_id}", "/status/{code}", "none"}
+    assert {float(s.labels["le"]) for s in buckets} == {
+        0.005,
+        0.01,
+        0.025,
+        0.05,
+        0.1,
+        0.25,
+        0.5,
+        1,
+        2.5,
+        5,
+        10,
+        float("inf"),
+    }
+    assert sum(s.value for s in buckets if s.labels["le"] == "+Inf") == 11
+    assert all(s.labels == {} for s in samples if s.name == "http_requests_inprogress")
     assert "/items/101" not in exposition
     assert "/items/202" not in exposition
     assert "/unknown/303" not in exposition

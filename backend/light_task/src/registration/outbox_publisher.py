@@ -7,6 +7,7 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func, or_, select
 from opentelemetry.context import Context
+from opentelemetry.instrumentation.utils import suppress_instrumentation
 
 from src.db.database import db_helper
 from src.db.unit_of_work import UnitOfWork
@@ -28,20 +29,22 @@ async def publish_once() -> None:
         if uow.session is None:
             raise RuntimeError("UnitOfWork has not been entered")
         now = datetime.now(UTC)
-        events = (
-            await uow.session.scalars(
-                select(OutboxEvent)
-                .where(
-                    OutboxEvent.published_at.is_(None),
-                    or_(
-                        OutboxEvent.next_attempt_at.is_(None),
-                        OutboxEvent.next_attempt_at <= now,
-                    ),
+        # Polling is technical work; dispatch below retains the event's trace context.
+        with suppress_instrumentation():
+            events = (
+                await uow.session.scalars(
+                    select(OutboxEvent)
+                    .where(
+                        OutboxEvent.published_at.is_(None),
+                        or_(
+                            OutboxEvent.next_attempt_at.is_(None),
+                            OutboxEvent.next_attempt_at <= now,
+                        ),
+                    )
+                    .with_for_update(skip_locked=True)
+                    .limit(20)
                 )
-                .with_for_update(skip_locked=True)
-                .limit(20)
-            )
-        ).all()
+            ).all()
         for event in events:
             await _dispatch_outbox_event(event)
     if observability.metrics is not None:
@@ -50,13 +53,14 @@ async def publish_once() -> None:
 
 async def update_outbox_stats() -> None:
     async with db_helper.async_session_maker() as session:
-        count, oldest = (
-            await session.execute(
-                select(func.count(OutboxEvent.id), func.min(OutboxEvent.created_at)).where(
-                    OutboxEvent.published_at.is_(None)
+        with suppress_instrumentation():
+            count, oldest = (
+                await session.execute(
+                    select(func.count(OutboxEvent.id), func.min(OutboxEvent.created_at)).where(
+                        OutboxEvent.published_at.is_(None)
+                    )
                 )
-            )
-        ).one()
+            ).one()
     if observability.metrics is not None:
         observability.metrics.update_outbox_stats(
             count=int(count),
