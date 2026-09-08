@@ -1,17 +1,123 @@
 [
-  {"uid":"kantano-target-down","title":"Kantano target is not scraped","expr":"((max by (job) (1 - up{environment=\"production\",job=~\"kantano-api|kantano-outbox-publisher|kantano-celery-worker|integrations/unix|integrations/postgres|integrations/redis|integrations/cadvisor|rabbitmq\"})) or ((label_replace(vector(1), \"job\", \"kantano-api\", \"\", \"\") or label_replace(vector(1), \"job\", \"kantano-outbox-publisher\", \"\", \"\") or label_replace(vector(1), \"job\", \"kantano-celery-worker\", \"\", \"\") or label_replace(vector(1), \"job\", \"integrations/unix\", \"\", \"\") or label_replace(vector(1), \"job\", \"integrations/postgres\", \"\", \"\") or label_replace(vector(1), \"job\", \"integrations/redis\", \"\", \"\") or label_replace(vector(1), \"job\", \"integrations/cadvisor\", \"\", \"\") or label_replace(vector(1), \"job\", \"rabbitmq\", \"\", \"\")) unless on (job) max by (job) (up{environment=\"production\"}))) and on () (count(up{environment=\"production\",job=\"alloy\"}) > 0)","for":"2m","noDataState":"OK","summary":"An expected scrape target is down or has disappeared for more than two minutes."},
-  {"uid":"kantano-dependency-down","title":"Kantano dependency unavailable","expr":"min({__name__=~\"pg_up|redis_up\",environment=\"production\"}) == 0 or absent(rabbitmq_identity_info{environment=\"production\"})","for":"2m","noDataState":"OK","summary":"PostgreSQL, Redis, or RabbitMQ is unavailable."},
-  {"uid":"kantano-http-5xx","title":"Kantano elevated 5xx rate","expr":"(sum(rate(http_requests_total{environment=\"production\",job=\"kantano-api\",status=~\"5xx|5..\"}[5m])) / clamp_min(sum(rate(http_requests_total{environment=\"production\",job=\"kantano-api\"}[5m])), 0.000001) > 0.05) and (sum(increase(http_requests_total{environment=\"production\",job=\"kantano-api\",status=~\"5xx|5..\"}[5m])) >= 5)","for":"5m","noDataState":"OK","summary":"HTTP 5xx exceeds 5 percent with at least five errors in five minutes."},
-  {"uid":"kantano-http-slow","title":"Kantano slow API responses","expr":"(histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{environment=\"production\",job=\"kantano-api\"}[10m]))) > 1) and (sum(increase(http_requests_total{environment=\"production\",job=\"kantano-api\"}[10m])) >= 100)","for":"10m","noDataState":"OK","summary":"API p95 exceeds one second under meaningful traffic."},
-  {"uid":"kantano-outbox-stuck","title":"Kantano outbox is stuck","expr":"(time() - kantano_outbox_oldest_created_timestamp_seconds{environment=\"production\"} > 120) and (kantano_outbox_unpublished_events{environment=\"production\"} > 0)","for":"2m","noDataState":"OK","summary":"The oldest unpublished outbox event is older than 120 seconds."},
-  {"uid":"kantano-publisher-stuck","title":"Kantano outbox publisher heartbeat stale","expr":"time() - kantano_outbox_publisher_last_poll_timestamp_seconds{environment=\"production\"} > 90","for":"2m","noDataState":"OK","summary":"The publisher has not completed a poll for more than 90 seconds."},
-  {"uid":"kantano-outbox-stats-stale","title":"Kantano outbox statistics stale","expr":"time() - kantano_outbox_stats_last_update_timestamp_seconds{environment=\"production\"} > 90","for":"2m","noDataState":"OK","summary":"Outbox aggregate statistics have not refreshed for more than 90 seconds."},
-  {"uid":"kantano-rabbit-no-consumer","title":"Kantano RabbitMQ queue has no consumer","expr":"(sum(rabbitmq_queue_messages_ready{environment=\"production\"}) > 0) and (sum(rabbitmq_queue_consumers{environment=\"production\"}) == 0)","for":"2m","noDataState":"OK","summary":"RabbitMQ contains ready messages but no consumer is attached."},
-  {"uid":"kantano-task-failed","title":"Kantano Celery task final failure","expr":"sum(increase(kantano_celery_task_final_failures_total{environment=\"production\"}[5m])) >= 1","for":"0s","noDataState":"OK","summary":"At least one Celery task exhausted its retries in five minutes."},
-  {"uid":"kantano-host-memory","title":"Kantano VPS memory low","expr":"node_memory_MemAvailable_bytes{environment=\"production\"} / node_memory_MemTotal_bytes{environment=\"production\"} < 0.10","for":"10m","noDataState":"OK","summary":"Less than ten percent of VPS memory remains available."},
-  {"uid":"kantano-host-disk","title":"Kantano VPS disk low","expr":"min(node_filesystem_avail_bytes{environment=\"production\",mountpoint=\"/\",fstype!~\"tmpfs|overlay\"} / node_filesystem_size_bytes{environment=\"production\",mountpoint=\"/\",fstype!~\"tmpfs|overlay\"}) < 0.15","for":"10m","noDataState":"OK","summary":"Less than fifteen percent of the root filesystem remains free."},
-  {"uid":"kantano-container-oom","title":"Kantano container OOM detected","expr":"sum(increase(container_oom_events_total{environment=\"production\"}[5m])) > 0","for":"0s","noDataState":"OK","summary":"A container OOM event was observed."},
-  {"uid":"kantano-telemetry-missing","title":"Kantano telemetry pipeline missing","expr":"absent(up{environment=\"production\",job=\"alloy\"})","for":"5m","noDataState":"OK","summary":"Alloy self-monitoring data has been absent for more than five minutes."},
-  {"uid":"kantano-export-failing","title":"Kantano telemetry export failing","expr":"(sum(rate(otelcol_exporter_send_failed_spans_total{environment=\"production\"}[5m])) > 0) or (sum(rate(prometheus_remote_storage_samples_failed_total{environment=\"production\"}[5m])) > 0) or (sum(rate(loki_write_dropped_entries_total{environment=\"production\"}[5m])) > 0) or (max(otelcol_exporter_queue_size{environment=\"production\",data_type=\"traces\"}) > 0) or (sum(prometheus_remote_storage_samples_pending{environment=\"production\"}) > 0)","for":"5m","noDataState":"OK","summary":"Alloy is persistently queueing, failing, or dropping telemetry exports."},
-  {"uid":"kantano-cloud-quota","title":"Kantano Grafana Cloud quota at 80 percent","datasource":"usage","expr":"(max(grafanacloud_instance_active_series) / 10000 >= 0.80) or (max(grafanacloud_org_logs_usage) / 50 >= 0.80) or (max(grafanacloud_org_traces_usage) / 50 >= 0.80) or (max(grafanacloud_org_logs_usage) * scalar(days_in_month()) / scalar(day_of_month()) / 50 >= 0.80) or (max(grafanacloud_org_traces_usage) * scalar(days_in_month()) / scalar(day_of_month()) / 50 >= 0.80)","for":"5m","noDataState":"OK","summary":"Metrics active series or current/projected monthly logs or traces usage reached 80 percent of the Grafana Cloud Free allowance."}
+  {
+    "uid": "kantano-target-down",
+    "title": "Kantano target is not scraped",
+    "expr": "((max by (job) (1 - up{environment=\"production\",job=~\"kantano-api|kantano-outbox-publisher|kantano-celery-worker|integrations/unix|integrations/postgres|integrations/redis|integrations/cadvisor|rabbitmq\"})) or ((label_replace(vector(1), \"job\", \"kantano-api\", \"\", \"\") or label_replace(vector(1), \"job\", \"kantano-outbox-publisher\", \"\", \"\") or label_replace(vector(1), \"job\", \"kantano-celery-worker\", \"\", \"\") or label_replace(vector(1), \"job\", \"integrations/unix\", \"\", \"\") or label_replace(vector(1), \"job\", \"integrations/postgres\", \"\", \"\") or label_replace(vector(1), \"job\", \"integrations/redis\", \"\", \"\") or label_replace(vector(1), \"job\", \"integrations/cadvisor\", \"\", \"\") or label_replace(vector(1), \"job\", \"rabbitmq\", \"\", \"\")) unless on (job) max by (job) (up{environment=\"production\"}))) and on () (count(up{environment=\"production\",job=\"alloy\"}) > 0)",
+    "for": "2m",
+    "noDataState": "OK",
+    "summary": "An expected scrape target is down or has disappeared for more than two minutes."
+  },
+  {
+    "uid": "kantano-dependency-down",
+    "title": "Kantano dependency unavailable",
+    "expr": "min({__name__=~\"pg_up|redis_up\",environment=\"production\"}) == 0 or absent(rabbitmq_identity_info{environment=\"production\"})",
+    "for": "2m",
+    "noDataState": "OK",
+    "summary": "PostgreSQL, Redis, or RabbitMQ is unavailable."
+  },
+  {
+    "uid": "kantano-http-5xx",
+    "title": "Kantano elevated 5xx rate",
+    "expr": "(sum(rate(http_requests_total{environment=\"production\",job=\"kantano-api\",status=~\"5xx|5..\"}[5m])) / clamp_min(sum(rate(http_requests_total{environment=\"production\",job=\"kantano-api\"}[5m])), 0.000001) > 0.05) and (sum(increase(http_requests_total{environment=\"production\",job=\"kantano-api\",status=~\"5xx|5..\"}[5m])) >= 5)",
+    "for": "5m",
+    "noDataState": "OK",
+    "summary": "HTTP 5xx exceeds 5 percent with at least five errors in five minutes."
+  },
+  {
+    "uid": "kantano-http-slow",
+    "title": "Kantano slow API responses",
+    "expr": "(histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{environment=\"production\",job=\"kantano-api\"}[10m]))) > 1) and (sum(increase(http_requests_total{environment=\"production\",job=\"kantano-api\"}[10m])) >= 100)",
+    "for": "10m",
+    "noDataState": "OK",
+    "summary": "API p95 exceeds one second under meaningful traffic."
+  },
+  {
+    "uid": "kantano-outbox-stuck",
+    "title": "Kantano outbox is stuck",
+    "expr": "(time() - kantano_outbox_oldest_created_timestamp_seconds{environment=\"production\"} > 120) and (kantano_outbox_unpublished_events{environment=\"production\"} > 0)",
+    "for": "2m",
+    "noDataState": "OK",
+    "summary": "The oldest unpublished outbox event is older than 120 seconds."
+  },
+  {
+    "uid": "kantano-publisher-stuck",
+    "title": "Kantano outbox publisher heartbeat stale",
+    "expr": "time() - kantano_outbox_publisher_last_poll_timestamp_seconds{environment=\"production\"} > 90",
+    "for": "2m",
+    "noDataState": "OK",
+    "summary": "The publisher has not completed a poll for more than 90 seconds."
+  },
+  {
+    "uid": "kantano-outbox-stats-stale",
+    "title": "Kantano outbox statistics stale",
+    "expr": "time() - kantano_outbox_stats_last_update_timestamp_seconds{environment=\"production\"} > 90",
+    "for": "2m",
+    "noDataState": "OK",
+    "summary": "Outbox aggregate statistics have not refreshed for more than 90 seconds."
+  },
+  {
+    "uid": "kantano-rabbit-no-consumer",
+    "title": "Kantano RabbitMQ queue has no consumer",
+    "expr": "(sum(rabbitmq_queue_messages_ready{environment=\"production\"}) > 0) and (sum(rabbitmq_queue_consumers{environment=\"production\"}) == 0)",
+    "for": "2m",
+    "noDataState": "OK",
+    "summary": "RabbitMQ contains ready messages but no consumer is attached."
+  },
+  {
+    "uid": "kantano-task-failed",
+    "title": "Kantano Celery task final failure",
+    "expr": "sum(increase(kantano_celery_task_final_failures_total{environment=\"production\"}[5m])) >= 1",
+    "for": "0s",
+    "noDataState": "OK",
+    "summary": "At least one Celery task exhausted its retries in five minutes."
+  },
+  {
+    "uid": "kantano-host-memory",
+    "title": "Kantano VPS memory low",
+    "expr": "node_memory_MemAvailable_bytes{environment=\"production\"} / node_memory_MemTotal_bytes{environment=\"production\"} < 0.10",
+    "for": "10m",
+    "noDataState": "OK",
+    "summary": "Less than ten percent of VPS memory remains available."
+  },
+  {
+    "uid": "kantano-host-disk",
+    "title": "Kantano VPS disk low",
+    "expr": "min(node_filesystem_avail_bytes{environment=\"production\",mountpoint=\"/\",fstype!~\"tmpfs|overlay\"} / node_filesystem_size_bytes{environment=\"production\",mountpoint=\"/\",fstype!~\"tmpfs|overlay\"}) < 0.15",
+    "for": "10m",
+    "noDataState": "OK",
+    "summary": "Less than fifteen percent of the root filesystem remains free."
+  },
+  {
+    "uid": "kantano-container-oom",
+    "title": "Kantano container OOM detected",
+    "expr": "sum(increase(container_oom_events_total{environment=\"production\"}[5m])) > 0",
+    "for": "0s",
+    "noDataState": "OK",
+    "summary": "A container OOM event was observed."
+  },
+  {
+    "uid": "kantano-telemetry-missing",
+    "title": "Kantano telemetry pipeline missing",
+    "expr": "absent(up{environment=\"production\",job=\"alloy\"})",
+    "for": "5m",
+    "noDataState": "OK",
+    "summary": "Alloy self-monitoring data has been absent for more than five minutes."
+  },
+  {
+    "uid": "kantano-export-failing",
+    "title": "Kantano telemetry export failing",
+    "expr": "(sum(rate(otelcol_exporter_send_failed_spans_total{environment=\"production\"}[5m])) > 0) or (sum(rate(prometheus_remote_storage_samples_failed_total{environment=\"production\"}[5m])) > 0) or (sum(rate(loki_write_dropped_entries_total{environment=\"production\"}[5m])) > 0)",
+    "for": "5m",
+    "noDataState": "OK",
+    "summary": "Alloy is persistently failing or dropping telemetry exports."
+  },
+  {
+    "uid": "kantano-cloud-quota",
+    "title": "Kantano Grafana Cloud quota at 80 percent",
+    "datasource": "usage",
+    "expr": "(max(grafanacloud_instance_active_series) / 10000 >= 0.80) or (max(grafanacloud_org_logs_usage) / 50 >= 0.80) or (max(grafanacloud_org_traces_usage) / 50 >= 0.80) or (max(grafanacloud_org_logs_usage) * scalar(days_in_month()) / scalar(day_of_month()) / 50 >= 0.80) or (max(grafanacloud_org_traces_usage) * scalar(days_in_month()) / scalar(day_of_month()) / 50 >= 0.80)",
+    "for": "5m",
+    "noDataState": "OK",
+    "summary": "Metrics active series or current/projected monthly logs or traces usage reached 80 percent of the Grafana Cloud Free allowance."
+  }
 ]
