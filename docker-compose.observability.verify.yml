@@ -27,6 +27,7 @@ services:
 
   celery-worker:
     environment:
+      LIGHTTASK_CONFIG__EMAIL__PROVIDER: resend
       LIGHTTASK_CONFIG__RESEND__BASE_URL: http://fake-email:8080
       LIGHTTASK_CONFIG__RESEND__API_KEY: local-observability-verification
     depends_on:

@@ -15,7 +15,7 @@ flowchart TB
     publisher["Outbox publisher"]
     rabbit[("RabbitMQ")]
     worker["Celery worker"]
-    email["Email provider API"]
+    email["Resend / local Mailpit"]
     files["Local or S3-compatible storage"]
     oauth["Yandex ID"]
 
@@ -119,7 +119,7 @@ sequenceDiagram
     participant Publisher as Outbox publisher
     participant MQ as RabbitMQ
     participant Worker as Celery worker
-    participant Provider as Email provider API
+    participant Provider as Resend / local Mailpit
 
     API->>DB: PendingRegistration + OutboxEvent
     Publisher->>DB: читает неопубликованное событие
@@ -129,10 +129,16 @@ sequenceDiagram
     Worker->>Provider: отправляет письмо подтверждения
 ```
 
-Worker повторяет временные сетевые ошибки, `429` и `5xx` с backoff. Стабильный
+Worker повторяет временные ошибки доставки с backoff. Для Resend стабильный
 `Idempotency-Key` не даёт повторной доставке одной задачи создать второе письмо.
 Redis в этом процессе используется только для ограничения частоты запросов; брокером
 Celery служит RabbitMQ.
+
+В development тот же `EmailGateway` может отправлять сообщения по SMTP в Mailpit.
+Mailpit предоставляет локальный inbox для проверки текста, HTML и ссылок, не отправляя
+письма во внешнюю сеть. Заголовок `X-Idempotency-Key` помогает сопоставлять локальные
+письма с задачами, но не предотвращает дубликаты при retry. В production разрешён
+только Resend.
 
 ## Observability
 
@@ -162,7 +168,7 @@ Linux и Docker. В production данные отправляются в Grafana 
 
 | Назначение | Интерфейс в приложении | Текущая реализация |
 |---|---|---|
-| Транзакционные письма | `EmailGateway` | `ResendGateway`, HTTPS API |
+| Транзакционные письма | `EmailGateway` | `ResendGateway` или dev-only `MailpitGateway` |
 | Внешний вход | OAuth use case | Yandex ID |
 | Файлы | Storage backend | Локальное или S3-compatible хранилище |
 

@@ -65,8 +65,15 @@ Ruff автоматически проверяет и форматирует Pyt
 
 Backend использует Python 3.12. Конфигурация загружается из корневого `.env` и
 переменных `LIGHTTASK_CONFIG__*`. PostgreSQL, Redis, RabbitMQ и JWT-ключи обязательны
-для полного запуска. Для реальных писем регистрации нужен API key настроенного
-почтового провайдера; Yandex OAuth и S3 в development можно не настраивать.
+для полного запуска. По умолчанию письма регистрации попадают в локальный Mailpit на
+`http://localhost:8025`. Для реальной отправки через Resend задайте в локальном `.env`:
+
+```dotenv
+LIGHTTASK_CONFIG__EMAIL__PROVIDER=resend
+LIGHTTASK_CONFIG__RESEND__API_KEY=<real-key>
+```
+
+Yandex OAuth и S3 в development можно не настраивать.
 
 Полная настройка окружения: [локальная разработка](../../docs/development.md).
 

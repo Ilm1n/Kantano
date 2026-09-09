@@ -1,6 +1,14 @@
 name: lighttask_dev
 
 services:
+  mailpit:
+    image: axllent/mailpit:v1.31.1
+    ports:
+      - "127.0.0.1:1025:1025"
+      - "127.0.0.1:8025:8025"
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+
   rabbitmq:
     image: rabbitmq:4-alpine
     environment:
@@ -125,11 +133,15 @@ services:
     environment:
       - LIGHTTASK_CONFIG__DB__HOST=db
       - LIGHTTASK_CONFIG__QUEUE__HOST=rabbitmq
+      - LIGHTTASK_CONFIG__EMAIL__PROVIDER=${LIGHTTASK_CONFIG__EMAIL__PROVIDER:-mailpit}
+      - LIGHTTASK_CONFIG__MAILPIT__HOST=mailpit
       - LIGHTTASK_SKIP_MIGRATIONS=1
     depends_on:
       db:
         condition: service_healthy
       rabbitmq:
+        condition: service_healthy
+      mailpit:
         condition: service_healthy
       migrations:
         condition: service_completed_successfully

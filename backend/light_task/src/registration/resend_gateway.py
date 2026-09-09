@@ -1,12 +1,12 @@
-# ruff: noqa: RUF001
 from __future__ import annotations
-
-from html import escape
 
 import httpx
 
 from src.config import ResendConfig
-from src.registration.email_gateway import TransientEmailGatewayError
+from src.registration.email_gateway import (
+    TransientEmailGatewayError,
+    build_verification_email_content,
+)
 
 
 class ResendGateway:
@@ -29,24 +29,16 @@ class ResendGateway:
         if not self._config.api_key:
             raise RuntimeError("Resend API key is not configured")
 
-        safe_username = escape(username)
-        safe_verification_url = escape(verification_url, quote=True)
+        content = build_verification_email_content(
+            username=username,
+            verification_url=verification_url,
+        )
         payload = {
             "from": f"{self._config.from_name} <{self._config.from_email}>",
             "to": [recipient],
-            "subject": "Подтвердите email в Kantano",
-            "text": (
-                f"Вы начали регистрацию в Kantano с именем пользователя {username}.\n\n"
-                f"Подтвердите адрес электронной почты: {verification_url}\n\n"
-                "Если вы не создавали аккаунт, просто проигнорируйте это письмо."
-            ),
-            "html": (
-                "<p>Вы начали регистрацию в Kantano с именем пользователя "
-                f"<strong>{safe_username}</strong>.</p>"
-                "<p>Подтвердите адрес электронной почты:</p>"
-                f'<p><a href="{safe_verification_url}">Подтвердить email</a></p>'
-                "<p>Если вы не создавали аккаунт, просто проигнорируйте это письмо.</p>"
-            ),
+            "subject": content.subject,
+            "text": content.text,
+            "html": content.html,
         }
         headers = {
             "Authorization": f"Bearer {self._config.api_key}",

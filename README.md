@@ -128,7 +128,7 @@ dashboards, метрики и сценарии диагностики описа
 
 | Назначение | Текущая реализация |
 |---|---|
-| Транзакционные письма | Resend HTTPS API через `EmailGateway` |
+| Транзакционные письма | Resend или локальный Mailpit через `EmailGateway` |
 | Внешний вход | Yandex ID OAuth |
 | Файлы | Локальное или S3-compatible хранилище |
 
@@ -168,13 +168,21 @@ Docker, применит миграции, подготовит локально
 через Vite. После `Ctrl+C` Docker-сервисы останутся работать; остановить их можно через
 `task dev:down`.
 
-Для реальной отправки писем в локальном `.env` требуется
-`LIGHTTASK_CONFIG__RESEND__API_KEY`. После запуска доступны:
+По умолчанию письма регистрации отправляются в локальный Mailpit и не покидают
+компьютер. Для реальной отправки через Resend задайте в локальном `.env`:
+
+```dotenv
+LIGHTTASK_CONFIG__EMAIL__PROVIDER=resend
+LIGHTTASK_CONFIG__RESEND__API_KEY=<real-key>
+```
+
+После запуска доступны:
 
 - API: `http://localhost:8000/api`;
 - Swagger UI: `http://localhost:8000/docs`;
 - liveness: `http://localhost:8000/api/health`;
-- readiness (проверка PostgreSQL): `http://localhost:8000/api/health/ready`.
+- readiness (проверка PostgreSQL): `http://localhost:8000/api/health/ready`;
+- Mailpit inbox: `http://localhost:8025`.
 
 Yandex OAuth и внешнее S3-хранилище для локальной разработки необязательны.
 Локальное окружение вместе с Grafana, Prometheus, Loki, Tempo и Alloy запускается через

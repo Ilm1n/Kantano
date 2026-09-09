@@ -33,8 +33,16 @@ class ResendConfig(BaseModel):
     from_name: str = "Kantano"
 
 
+class MailpitConfig(BaseModel):
+    host: str = "localhost"
+    smtp_port: int = Field(default=1025, ge=1, le=65535)
+    timeout_seconds: float = Field(default=5.0, gt=0)
+    from_email: str = "no-reply@kantano.local"
+    from_name: str = "Kantano"
+
+
 class EmailConfig(BaseModel):
-    provider: Literal["resend"] = "resend"
+    provider: Literal["resend", "mailpit"] = "resend"
 
 
 class QueueConfig(BaseModel):
@@ -200,6 +208,7 @@ class Settings(BaseSettings):
     frontend: FrontendConfig = FrontendConfig()
     email: EmailConfig = EmailConfig()
     resend: ResendConfig = ResendConfig()
+    mailpit: MailpitConfig = MailpitConfig()
     queue: QueueConfig = QueueConfig()
     registration: RegistrationConfig = RegistrationConfig()
     yandex: YandexConfig = YandexConfig()
@@ -208,6 +217,12 @@ class Settings(BaseSettings):
     realtime: RealtimeConfig = RealtimeConfig()
     cache: CacheConfig = CacheConfig()
     observability: ObservabilityConfig = ObservabilityConfig()
+
+    @model_validator(mode="after")
+    def validate_production_email_provider(self) -> "Settings":
+        if self.observability.environment == "production" and self.email.provider == "mailpit":
+            raise ValueError("Mailpit email provider is not allowed in production")
+        return self
 
 
 settings = Settings()  # type: ignore[call-arg]

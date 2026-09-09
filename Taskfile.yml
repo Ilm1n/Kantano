@@ -104,7 +104,7 @@ tasks:
       - task: _require-local-config
       - >-
         {{.OBS_COMPOSE}} up -d --build --wait
-        backend celery-worker outbox-publisher alloy prometheus loki tempo grafana
+        backend celery-worker outbox-publisher mailpit alloy prometheus loki tempo grafana
       - '{{.OBS_COMPOSE}} run --rm grafana-provision'
 
   obs:down:
@@ -117,7 +117,7 @@ tasks:
     cmds:
       - >-
         {{.OBS_COMPOSE}} logs --tail=200 --follow
-        backend celery-worker outbox-publisher alloy prometheus loki tempo grafana
+        backend celery-worker outbox-publisher mailpit alloy prometheus loki tempo grafana
 
   obs:verify:
     desc: Проверить observability-конфиги
