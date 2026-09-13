@@ -258,6 +258,7 @@ export async function ensureAnalyticsState(): Promise<void> {
   await loadMetrikaScript();
 
   window.ym?.(METRIKA_ID, 'init', {
+    defer: true,
     clickmap: true,
     trackLinks: true,
     accurateTrackBounce: true,
@@ -268,9 +269,10 @@ export async function ensureAnalyticsState(): Promise<void> {
   initialized = true;
 }
 
-export function trackPageView(path: string): void {
-  if (!initialized || !window.ym || !isConsentAllowedNow()) return;
+export function trackPageView(path: string): boolean {
+  if (!initialized || !window.ym || !isConsentAllowedNow()) return false;
 
   const url = `${window.location.origin}${path}`;
   window.ym(METRIKA_ID, 'hit', url);
+  return true;
 }

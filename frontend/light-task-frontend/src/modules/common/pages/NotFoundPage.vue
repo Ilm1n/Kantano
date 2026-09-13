@@ -7,11 +7,13 @@ const router = useRouter();
 
 const {isDark, toggleTheme} = useTheme();
 
+const goHome = () => window.location.assign('/');
+
 const goBack = () => {
   if (window.history.length > 1) {
     router.back();
   } else {
-    router.push('/');
+    goHome();
   }
 };
 </script>
@@ -52,7 +54,7 @@ const goBack = () => {
             label="На главную"
             icon="pi pi-home"
             class="!bg-primary-600 !border-none !rounded-xl !px-6 !text-white"
-            @click="router.push('/')"
+            @click="goHome()"
         />
       </div>
 

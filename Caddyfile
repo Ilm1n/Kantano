@@ -47,7 +47,20 @@ kantano.ru {
 		}
 		header @revalidate Cache-Control "no-cache, no-store, must-revalidate"
 
-		try_files {path} /index.html
-		file_server
+		handle /assets/* {
+			file_server
+		}
+		handle / {
+			rewrite * /index.html
+			file_server
+		}
+		@static path_regexp static \.(css|js|mjs|map|png|webp|jpe?g|svg|ico|woff2?|xml|txt|webmanifest|html)$
+		handle @static {
+			file_server
+		}
+		handle {
+			rewrite * /app.html
+			file_server
+		}
 	}
 }

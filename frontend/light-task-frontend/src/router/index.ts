@@ -13,7 +13,6 @@ const CheckEmailPage = () => import('@/modules/auth/components/CheckEmailPage.vu
 const ProjectsList = () => import('@/modules/projects/components/ProjectsList.vue');
 const BoardPage = () => import('@/modules/board/pages/BoardPage.vue');
 const ProfilePage = () => import('@/modules/profile/pages/ProfilePage.vue');
-const LandingPage = () => import('@/modules/landing/pages/LandingPage.vue');
 const AcceptInvitationPage = () => import('@/modules/invitations/pages/AcceptInvitationPage.vue');
 const NotFoundPage = () => import('@/modules/common/pages/NotFoundPage.vue');
 
@@ -21,12 +20,6 @@ const NotFoundPage = () => import('@/modules/common/pages/NotFoundPage.vue');
 const router = createRouter({
   history: createWebHistory(),
   routes: [
-    {
-      path: '/',
-      name: 'landing',
-      component: LandingPage,
-      meta: { requiresAuth: false }
-    },
     {
       path: '/login',
       name: 'login',
@@ -86,6 +79,10 @@ const router = createRouter({
 });
 
 router.beforeEach(async (to, _, next) => {
+  if (to.path === '/') {
+    window.location.assign('/');
+    return next(false);
+  }
   const authStore = useAuthStore();
 
   if (to.path === '/login' || to.path === '/register') {

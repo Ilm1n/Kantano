@@ -6,6 +6,7 @@ Allow: /$
 Allow: /assets/
 
 Allow: /*.png$
+Allow: /*.webp$
 Allow: /*.ico$
 Allow: /*.svg$
 Allow: /*.webmanifest$

@@ -2,9 +2,11 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { resolve } from 'path'
+import { landingRouting } from './scripts/landing-routing'
 
 export default defineConfig({
-  plugins: [vue()],
+  plugins: [vue(), landingRouting()],
+  appType: 'mpa',
   resolve: {
     alias: {
       '@': resolve(__dirname, 'src'),
@@ -15,22 +17,7 @@ export default defineConfig({
     minify: 'esbuild',
     cssCodeSplit: true,
     rollupOptions: {
-      output: {
-        manualChunks(id: string | string[]) {
-          if (id.includes('@fontsource') || id.includes('primeicons')) {
-            return 'fonts';
-          }
-          if (id.includes('node_modules')) {
-            if (id.includes('primevue')) {
-              return 'vendor-ui';
-            }
-            if (id.includes('vue')) {
-              return 'vendor-vue';
-            }
-            return 'vendor-core';
-          }
-        }
-      }
+      input: { landing: resolve(__dirname, 'index.html'), app: resolve(__dirname, 'app.html') },
     }
   },
   esbuild: {

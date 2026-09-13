@@ -1,27 +1,36 @@
-import type { Router } from 'vue-router';
+import type { Router } from "vue-router";
 
-import { onConsentChanged } from '@/shared/consent/consent';
-import { ensureAnalyticsState, trackPageView } from '@/shared/analytics/yandex';
+import { onConsentChanged } from "@/shared/consent/consent";
+import { ensureAnalyticsState, trackPageView } from "@/shared/analytics/yandex";
 
 let bootstrapped = false;
 
-export function bootstrapAnalytics(router: Router): void {
+export function bootstrapAnalytics(router?: Router): void {
   if (bootstrapped) return;
   bootstrapped = true;
 
-  void ensureAnalyticsState().then(() => {
-    trackPageView(window.location.pathname + window.location.search);
-  });
+  const currentPath = () => window.location.pathname + window.location.search;
+  let lastPath: string | null = null;
+  const visit = async (path: string): Promise<void> => {
+    try {
+      await ensureAnalyticsState();
+      if (path !== lastPath && trackPageView(path)) lastPath = path;
+    } catch {
+      // An unavailable analytics provider must not interrupt navigation.
+    }
+  };
 
   onConsentChanged(() => {
-    void ensureAnalyticsState().then(() => {
-      trackPageView(window.location.pathname + window.location.search);
-    });
+    lastPath = null;
+    void visit(currentPath());
   });
 
-  router.afterEach((to) => {
-    void ensureAnalyticsState().then(() => {
-      trackPageView(to.fullPath);
+  if (router) {
+    router.afterEach((to, _from, failure) => {
+      if (!failure) void visit(to.fullPath);
     });
-  });
+    void router.isReady().then(() => visit(router.currentRoute.value.fullPath));
+  } else {
+    void visit(currentPath());
+  }
 }

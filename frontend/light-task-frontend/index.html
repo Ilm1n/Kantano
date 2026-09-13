@@ -1,93 +1,71 @@
 <!doctype html>
 <html lang="ru">
-<head>
-  <meta charset="UTF-8" />
-  <link rel="icon" type="image/png" href="/favicon-96x96.png" sizes="96x96" />
-  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-  <link rel="shortcut icon" href="/favicon.ico" />
-  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
-  <meta name="apple-mobile-web-app-title" content="Kantano" />
-  <meta name="theme-color" content="#3b82f6">
-  <link rel="manifest" href="/site.webmanifest" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-
-  <!-- SEO -->
-  <title>Kantano — Управляйте задачами с легкостью</title>
-  <meta name="description" content="Бесплатный канбан-планировщик для команд. Управление проектами, задачами и сроками в современном интерфейсе. Быстро, удобно, безопасно." />
-  <meta property="og:type" content="website" />
-  <meta property="og:url" content="https://kantano.ru/" />
-  <meta property="og:title" content="Kantano — Управляйте задачами с легкостью" />
-  <meta property="og:description" content="Попробуйте современный инструмент для управления проектами. Бесплатно для небольших команд." />
-  <meta property="og:image" content="https://kantano.ru/og-image.png" />
-  <meta name="twitter:card" content="summary_large_image" />
-  <link rel="canonical" href="https://kantano.ru/" />
-
-
-  <!-- JSON-LD Микроразметка -->
-  <script type="application/ld+json">
-    {
-      "@context": "https://schema.org",
-      "@graph":[
-        {
-          "@type": "Organization",
-          "@id": "https://kantano.ru/#organization",
-          "name": "Kantano",
-          "url": "https://kantano.ru",
-          "logo": {
-            "@type": "ImageObject",
-            "url": "https://kantano.ru/favicon.svg"
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <meta name="theme-color" content="#2563eb" />
+    <title>Kantano — бесплатная канбан-доска для задач и учёбы</title>
+    <meta
+      name="description"
+      content="Планируйте личные дела, учёбу и фриланс в Kantano. Канбан-доски, сроки, приоритеты и совместные проекты — бесплатно в браузере"
+    />
+    <link rel="canonical" href="https://kantano.ru/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://kantano.ru/" />
+    <meta
+      property="og:title"
+      content="Kantano — свои задачи в понятном порядке"
+    />
+    <meta
+      property="og:description"
+      content="Бесплатная канбан-доска для личных дел, учёбы и совместных проектов."
+    />
+    <meta property="og:image" content="https://kantano.ru/og-image.png" />
+    <meta property="og:image:alt" content="Доска учебного проекта в Kantano" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "WebSite",
+            "name": "Kantano",
+            "url": "https://kantano.ru/",
+            "inLanguage": "ru"
           },
-          "sameAs":["https://github.com/Ilm1n", "https://t.me/Ilm1n"]
-        },
-        {
-          "@type": "SoftwareApplication",
-          "@id": "https://kantano.ru/#software",
-          "name": "Kantano Project Management",
-          "applicationCategory": "BusinessApplication",
-          "operatingSystem": "Web, Android, iOS",
-          "offers": {
-            "@type": "Offer",
-            "price": "0",
-            "priceCurrency": "RUB"
-          },
-          "aggregateRating": {
-            "@type": "AggregateRating",
-            "ratingValue": "4.9",
-            "ratingCount": "128"
+          {
+            "@type": "SoftwareApplication",
+            "name": "Kantano",
+            "url": "https://kantano.ru/",
+            "applicationCategory": "ProductivityApplication",
+            "operatingSystem": "Web",
+            "description": "Канбан-доска для личных дел, учёбы и совместных проектов"
           }
-        },
-        {
-          "@type": "FAQPage",
-          "mainEntity":[
-            { "@type": "Question", "name": "Какие ограничения у бесплатной версии?", "acceptedAnswer": { "@type": "Answer", "text": "Бесплатный тариф 'Free' навсегда останется бесплатным. Он включает создание до 3 проектов и командную работу до 5 человек. Этого достаточно для стартапов, студентов и личного планирования." } },
-            { "@type": "Question", "name": "Нужно ли обновлять страницу, чтобы увидеть изменения?", "acceptedAnswer": { "@type": "Answer", "text": "Нет. Kantano использует технологию WebSockets для мгновенной синхронизации. Если ваш коллега передвинет задачу или изменит описание, вы увидите это в ту же секунду без перезагрузки." } },
-            { "@type": "Question", "name": "Работает ли Kantano на телефоне?", "acceptedAnswer": { "@type": "Answer", "text": "Да, интерфейс полностью адаптирован для мобильных устройств. Вы можете управлять задачами через браузер или добавить сайт на главный экран как приложение (PWA)." } },
-            { "@type": "Question", "name": "Насколько безопасны мои данные?", "acceptedAnswer": { "@type": "Answer", "text": "Мы используем современные стандарты шифрования (SSL) и защищенные протоколы авторизации (JWT). Ваши проекты доступны только тем участникам, которых вы лично пригласили." } },
-            { "@type": "Question", "name": "Как быстро пригласить команду?", "acceptedAnswer": { "@type": "Answer", "text": "Очень просто. Зайдите в настройки проекта, сгенерируйте пригласительную ссылку (или QR-код) и отправьте коллегам в мессенджер. Им останется только зарегистрироваться." } }
-          ]
-        }
-      ]
-    }
-  </script>
-
-  <script>
-    (function () {
-      const storageTheme = localStorage.getItem('theme');
-      const systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      const isDark = storageTheme === 'dark' || (!storageTheme && systemDark);
-      if (isDark) {
-        document.documentElement.classList.add('dark');
-        document.documentElement.style.backgroundColor = '#0f172a';
-      } else {
-        document.documentElement.classList.remove('dark');
-        document.documentElement.style.backgroundColor = '#f8f9fa';
+        ]
       }
-    })();
-  </script>
-</head>
-<body class="dark:bg-dark-bg bg-gray-50">
-
-<div id="app"></div>
-<script type="module" src="/src/main.ts"></script>
-</body>
+    </script>
+    <script>
+      (function () {
+        const storageTheme = localStorage.getItem("theme");
+        const systemDark = window.matchMedia(
+          "(prefers-color-scheme: dark)",
+        ).matches;
+        const isDark = storageTheme === "dark" || (!storageTheme && systemDark);
+        if (isDark) {
+          document.documentElement.classList.add("dark");
+          document.documentElement.style.backgroundColor = "#0f172a";
+        } else {
+          document.documentElement.classList.remove("dark");
+          document.documentElement.style.backgroundColor = "#f8f9fa";
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="app"><!--landing-html--></div>
+    <script type="module" src="/src/modules/landing/client.ts"></script>
+  </body>
 </html>
