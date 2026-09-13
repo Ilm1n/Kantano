@@ -1,0 +1,4 @@
+Contact: mailto:mininiv2005@gmail.com
+Expires: 2027-09-01T00:00:00Z
+Preferred-Languages: ru, en
+Canonical: https://kantano.ru/.well-known/security.txt

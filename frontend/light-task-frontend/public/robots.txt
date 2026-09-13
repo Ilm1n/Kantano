@@ -13,6 +13,8 @@ Allow: /*.webmanifest$
 
 Allow: /sitemap.xml$
 Allow: /robots.txt$
+Allow: /llms.txt$
+Allow: /.well-known/security.txt$
 
 Host: https://kantano.ru
 Sitemap: https://kantano.ru/sitemap.xml
