@@ -4,14 +4,17 @@ import base64
 import json
 import os
 import sys
+import time
 from pathlib import Path
 from typing import Any
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parent
 BASE_URL = os.environ.get("GRAFANA_URL", "http://grafana:3000").rstrip("/")
 FOLDER_UID = "kantano"
+REQUEST_ATTEMPTS = 5
+RETRY_DELAY_SECONDS = 15
 
 
 def _authorization() -> str:
@@ -26,23 +29,35 @@ def _authorization() -> str:
 
 def request(method: str, path: str, payload: Any | None = None) -> tuple[int, Any]:
     data = json.dumps(payload).encode() if payload is not None else None
-    req = Request(
+    req = Request(  # noqa: S310 - operator-supplied URL.
         f"{BASE_URL}{path}",
         data=data,
         method=method,
         headers={"Authorization": _authorization(), "Content-Type": "application/json"},
     )
-    try:
-        with urlopen(req, timeout=20) as response:  # noqa: S310 - operator-supplied URL.
-            body = response.read()
-            return response.status, json.loads(body) if body else None
-    except HTTPError as exc:
-        body = exc.read().decode(errors="replace")
-        if exc.code == 404:
-            return 404, None
-        raise RuntimeError(
-            f"Grafana API {method} {path} failed ({exc.code}): {body}"
-        ) from exc
+    for attempt in range(1, REQUEST_ATTEMPTS + 1):
+        try:
+            with urlopen(req, timeout=20) as response:  # noqa: S310 - operator-supplied URL.
+                body = response.read()
+                return response.status, json.loads(body) if body else None
+        except HTTPError as exc:
+            body = exc.read().decode(errors="replace")
+            if exc.code == 404:
+                return 404, None
+            if exc.code not in {502, 503, 504} or attempt == REQUEST_ATTEMPTS:
+                raise RuntimeError(
+                    f"Grafana API {method} {path} failed ({exc.code}): {body}"
+                ) from exc
+        except (URLError, TimeoutError, ConnectionError):
+            if attempt == REQUEST_ATTEMPTS:
+                raise
+        print(
+            f"Grafana API {method} {path}: attempt {attempt}/{REQUEST_ATTEMPTS} failed. "
+            f"Retrying in {RETRY_DELAY_SECONDS}s...",
+            file=sys.stderr,
+        )
+        time.sleep(RETRY_DELAY_SECONDS)
+    raise RuntimeError("Grafana API request attempts exhausted")
 
 
 def ensure_folder() -> None:
