@@ -39,7 +39,7 @@ const goBack = () => {
         Страница не найдена
       </h2>
       <p class="text-slate-500 dark:text-slate-400 mb-10 leading-relaxed">
-        Похоже, вы забрели туда, где еще ничего не нет. Проверьте адрес или вернитесь назад.
+        Похоже, вы забрели туда, где еще ничего нет. Проверьте адрес или вернитесь назад.
       </p>
 
       <div class="flex flex-col sm:flex-row gap-4 justify-center">
