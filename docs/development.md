@@ -122,26 +122,26 @@ Vite проксирует `/api` и `/ws` на `127.0.0.1:8000`. Для отде
 
 ## ИИ-помощник
 
-Помощник выключен по умолчанию. Для проверки с моделью LM Studio запустите в LM Studio
-сервер OpenAI compatible на порту `1234` и загрузите `google/gemma-4-e4b`. Затем из корня
-репозитория запустите backend с локальным Compose override, а frontend обычной командой:
+В обычном `docker-compose.dev.yml` помощник включён в локальном режиме по умолчанию.
+Запустите в LM Studio сервер OpenAI compatible на порту `1234` и загрузите
+`google/gemma-4-e4b`. Затем из корня репозитория запустите приложение:
 
 ```bash
-docker compose -f docker-compose.dev.yml -f docker-compose.assistant-local.yml up -d --build backend
+task dev:up
 task dev:frontend
 ```
 
-Override задаёт `LIGHTTASK_CONFIG__ASSISTANT__ENABLED=true`,
+Dev Compose задаёт `LIGHTTASK_CONFIG__ASSISTANT__ENABLED=true`,
 `LIGHTTASK_CONFIG__ASSISTANT__MODE=local`,
 `LIGHTTASK_CONFIG__ASSISTANT__LOCAL_BASE_URL=http://host.docker.internal:1234/v1` и
-`LIGHTTASK_CONFIG__ASSISTANT__LOCAL_MODEL=google/gemma-4-e4b`. В этом режиме backend
-отправляет запросы только в LM Studio; на облачные модели он не переключается.
+`LIGHTTASK_CONFIG__ASSISTANT__LOCAL_MODEL=google/gemma-4-e4b` по умолчанию.
+Эти значения можно переопределить через переменные окружения. В локальном режиме
+backend отправляет запросы только в LM Studio; на облачные модели он не переключается.
 Помощник открывается из левого меню на любой авторизованной странице и из заголовка
 доски. Чаты привязаны к проекту. Перед созданием, изменением и переносом задачи
 помощник показывает действие для подтверждения.
 
-Для облачной проверки замените override на обычный `docker-compose.dev.yml` и задайте
-в локальном `.env`:
+Для облачной проверки задайте в локальном `.env`:
 
 ```dotenv
 LIGHTTASK_CONFIG__ASSISTANT__ENABLED=true

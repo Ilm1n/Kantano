@@ -1,9 +1,0 @@
-services:
-  backend:
-    environment:
-      LIGHTTASK_CONFIG__ASSISTANT__ENABLED: "true"
-      LIGHTTASK_CONFIG__ASSISTANT__MODE: local
-      LIGHTTASK_CONFIG__ASSISTANT__LOCAL_BASE_URL: http://host.docker.internal:1234/v1
-      LIGHTTASK_CONFIG__ASSISTANT__LOCAL_MODEL: google/gemma-4-e4b
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
