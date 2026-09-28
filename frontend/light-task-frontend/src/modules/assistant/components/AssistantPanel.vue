@@ -157,7 +157,6 @@ function confirmDeleteChat() {
     </div>
 
     <footer class="shrink-0 border-t border-slate-200 p-4 dark:border-dark-border">
-      <p v-if="store.latestRun?.model" class="mb-2 text-[11px] text-slate-500">Модель: {{ store.latestRun.model }} <span v-if="store.latestRun.fallbackUsed">· резервная</span></p>
       <p v-if="store.isPending" class="mb-2 text-xs text-amber-700 dark:text-amber-300">Сначала подтвердите или отклоните действие.</p>
       <p v-if="store.isBusy && !store.isStreaming" class="mb-2 text-xs text-slate-500">Этот запрос ещё выполняется. Обновите чат позже.</p>
       <p v-if="store.latestRun?.status === 'unknown'" class="mb-2 text-xs text-amber-700 dark:text-amber-300">Исход изменения неизвестен. Проверьте задачу перед новой попыткой.</p>
