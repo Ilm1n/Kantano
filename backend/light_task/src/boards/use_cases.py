@@ -628,6 +628,22 @@ class UpdateTaskUseCase:
                         raise BadRequestError(ErrorCode.INVALID_TAG_IDS)
                     task.tags = list(tags)
 
+                if command.add_tag_id is not None or command.remove_tag_id is not None:
+                    tag_id = command.add_tag_id or command.remove_tag_id
+                    if tag_id is None:
+                        raise BadRequestError(ErrorCode.INVALID_TAG_IDS)
+                    tags = await repository.list_tags_by_ids(
+                        project_id=task.project_id,
+                        tag_ids=[tag_id],
+                    )
+                    if not tags:
+                        raise BadRequestError(ErrorCode.INVALID_TAG_IDS)
+                    if command.add_tag_id is not None:
+                        if all(tag.id != tag_id for tag in task.tags):
+                            task.tags.append(tags[0])
+                    else:
+                        task.tags = [tag for tag in task.tags if tag.id != tag_id]
+
                 for key, value in command.changes.items():
                     setattr(task, key, value)
 

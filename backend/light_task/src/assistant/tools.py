@@ -7,17 +7,35 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 
 from src.boards.constants import TaskPriority
-from src.boards.dto import CreateTaskCommand, MoveTaskCommand, UpdateTaskCommand
+from src.boards.dto import (
+    CreateColumnCommand,
+    CreateTaskCommand,
+    MoveTaskCommand,
+    ReorderColumnsCommand,
+    UpdateColumnCommand,
+    UpdateTaskCommand,
+)
 from src.boards.events import BoardsDomainEventDispatcher
 from src.boards.models import BoardColumn, Task
 from src.boards.repository import BoardRepository
-from src.boards.use_cases import CreateTaskUseCase, MoveTaskUseCase, UpdateTaskUseCase
+from src.boards.use_cases import (
+    CreateColumnUseCase,
+    CreateTaskUseCase,
+    MoveTaskUseCase,
+    ReorderColumnsUseCase,
+    UpdateColumnUseCase,
+    UpdateTaskUseCase,
+)
+from src.constants import HEX_COLOR_PATTERN
 from src.db.database import db_helper
 from src.db.unit_of_work import UnitOfWork
 from src.projects.cache import ProjectReadCache
 from src.projects.models import Project, ProjectMember
 from src.realtimev1.publisher import DomainEventPublisher
+from src.tags.dto import CreateTagCommand, UpdateTagCommand
+from src.tags.events import TagsDomainEventDispatcher
 from src.tags.models import Tag
+from src.tags.use_cases import CreateTagUseCase, UpdateTagUseCase
 from src.users.models import User
 
 
@@ -60,7 +78,10 @@ class UpdateTask(BaseModel):
     priority: TaskPriority | None = None
     assignee_id: int | None = None
     deadline_at: datetime | None = None
-    tag_ids: list[int] | None = None
+    tag_ids: list[int] | None = Field(
+        default=None,
+        description="Replace all task tags only when explicitly requested; use AddTagToTask or RemoveTagFromTask for one tag",
+    )
 
 
 class MoveTask(BaseModel):
@@ -70,6 +91,57 @@ class MoveTask(BaseModel):
     new_column_id: int
 
 
+class CreateColumn(BaseModel):
+    """Propose creating one board column at the end. Requires confirmation."""
+
+    name: str = Field(min_length=1, max_length=100)
+
+
+class RenameColumn(BaseModel):
+    """Propose renaming an existing column. Requires confirmation."""
+
+    column_id: int
+    new_name: str = Field(min_length=1, max_length=100)
+
+
+class MoveColumn(BaseModel):
+    """Move a column before another column, or to the end when before_column_id is null."""
+
+    column_id: int
+    before_column_id: int | None = Field(
+        description="Destination column ID, or null to place the column last"
+    )
+
+
+class CreateTag(BaseModel):
+    """Propose creating a project tag. Requires confirmation."""
+
+    name: str = Field(min_length=1, max_length=50)
+    color: str = Field(default="#9CA3AF", pattern=HEX_COLOR_PATTERN)
+
+
+class UpdateTag(BaseModel):
+    """Propose renaming a tag and/or changing its color. Requires confirmation."""
+
+    tag_id: int
+    name: str | None = Field(default=None, min_length=1, max_length=50)
+    color: str | None = Field(default=None, pattern=HEX_COLOR_PATTERN)
+
+
+class AddTagToTask(BaseModel):
+    """Add one existing project tag to one task without removing other tags."""
+
+    task_id: int
+    tag_id: int
+
+
+class RemoveTagFromTask(BaseModel):
+    """Remove one project tag from one task without changing other tags."""
+
+    task_id: int
+    tag_id: int
+
+
 TOOL_SCHEMAS: list[type[BaseModel]] = [
     ProjectOverview,
     SearchTasks,
@@ -77,8 +149,26 @@ TOOL_SCHEMAS: list[type[BaseModel]] = [
     CreateTask,
     UpdateTask,
     MoveTask,
+    CreateColumn,
+    RenameColumn,
+    MoveColumn,
+    CreateTag,
+    UpdateTag,
+    AddTagToTask,
+    RemoveTagFromTask,
 ]
-WRITE_TOOLS = {"CreateTask", "UpdateTask", "MoveTask"}
+WRITE_TOOLS = {
+    "CreateTask",
+    "UpdateTask",
+    "MoveTask",
+    "CreateColumn",
+    "RenameColumn",
+    "MoveColumn",
+    "CreateTag",
+    "UpdateTag",
+    "AddTagToTask",
+    "RemoveTagFromTask",
+}
 
 
 class AssistantTools:
@@ -92,6 +182,9 @@ class AssistantTools:
         self.project_id = project_id
         self.user_id = user_id
         self.dispatcher = BoardsDomainEventDispatcher(
+            db_helper.async_session_maker, event_publisher, cache
+        )
+        self.tag_dispatcher = TagsDomainEventDispatcher(
             db_helper.async_session_maker, event_publisher, cache
         )
 
@@ -138,13 +231,17 @@ class AssistantTools:
                         "description": project.description,
                     },
                     "columns": [
-                        {"id": c.id, "name": c.name, "task_count": counts.get(c.id, 0)}
+                        {
+                            "id": c.id,
+                            "name": c.name,
+                            "task_count": counts.get(c.id, 0),
+                        }
                         for c in columns
                     ],
                     "members": [
                         {"id": m.id, "username": m.username, "name": m.full_name} for m in members
                     ],
-                    "tags": [{"id": t.id, "name": t.name} for t in tags],
+                    "tags": [{"id": t.id, "name": t.name, "color": t.color} for t in tags],
                 }
             if name == "SearchTasks":
                 query = SearchTasks.model_validate(args)
@@ -186,6 +283,100 @@ class AssistantTools:
 
     async def execute_write(self, name: str, args: dict[str, Any]) -> dict[str, Any]:
         # The API must atomically claim pending -> executing before calling here.
+        if name == "CreateColumn":
+            data = CreateColumn.model_validate(args)
+            column = await CreateColumnUseCase(
+                lambda: UnitOfWork(event_dispatcher=self.dispatcher)
+            ).execute(
+                CreateColumnCommand(
+                    project_id=self.project_id,
+                    actor_user_id=self.user_id,
+                    name=data.name,
+                    tasks_limit=None,
+                )
+            )
+            return {"column_id": column.id, "kind": "column_created"}
+
+        if name == "RenameColumn":
+            data = RenameColumn.model_validate(args)
+            column = await UpdateColumnUseCase(
+                lambda: UnitOfWork(event_dispatcher=self.dispatcher)
+            ).execute(
+                UpdateColumnCommand(
+                    project_id=self.project_id,
+                    column_id=data.column_id,
+                    actor_user_id=self.user_id,
+                    changes={"name": data.new_name},
+                )
+            )
+            return {"column_id": column.id, "kind": "column_renamed"}
+
+        if name == "MoveColumn":
+            data = MoveColumn.model_validate(args)
+            async with db_helper.async_session_maker() as session:
+                column_ids = list(
+                    (
+                        await session.scalars(
+                            select(BoardColumn.id)
+                            .where(BoardColumn.project_id == self.project_id)
+                            .order_by(BoardColumn.position, BoardColumn.id)
+                        )
+                    ).all()
+                )
+            if data.column_id not in column_ids:
+                raise ValueError("Column not found in this project")
+            column_ids.remove(data.column_id)
+            if data.before_column_id is not None:
+                if data.before_column_id not in column_ids:
+                    raise ValueError("Destination column not found in this project")
+                column_ids.insert(column_ids.index(data.before_column_id), data.column_id)
+            else:
+                column_ids.append(data.column_id)
+            await ReorderColumnsUseCase(
+                lambda: UnitOfWork(event_dispatcher=self.dispatcher)
+            ).execute(
+                ReorderColumnsCommand(
+                    project_id=self.project_id,
+                    actor_user_id=self.user_id,
+                    column_ids=column_ids,
+                )
+            )
+            return {"column_id": data.column_id, "kind": "column_moved"}
+
+        if name == "CreateTag":
+            data = CreateTag.model_validate(args)
+            tag = await CreateTagUseCase(
+                lambda: UnitOfWork(event_dispatcher=self.tag_dispatcher)
+            ).execute(
+                CreateTagCommand(
+                    project_id=self.project_id,
+                    actor_user_id=self.user_id,
+                    name=data.name,
+                    color=data.color,
+                )
+            )
+            return {"tag_id": tag.id, "kind": "tag_created"}
+
+        if name == "UpdateTag":
+            data = UpdateTag.model_validate(args)
+            changes = data.model_dump(exclude={"tag_id"}, exclude_none=True)
+            if not changes:
+                raise ValueError("No tag changes were requested")
+            async with db_helper.async_session_maker() as session:
+                tag = await session.get(Tag, data.tag_id)
+                if tag is None or tag.project_id != self.project_id:
+                    raise ValueError("Tag not found in this project")
+            tag = await UpdateTagUseCase(
+                lambda: UnitOfWork(event_dispatcher=self.tag_dispatcher)
+            ).execute(
+                UpdateTagCommand(
+                    tag_id=data.tag_id,
+                    actor_user_id=self.user_id,
+                    changes=changes,
+                )
+            )
+            return {"tag_id": tag.id, "kind": "tag_updated"}
+
         if name == "CreateTask":
             data = CreateTask.model_validate(args)
             async with db_helper.async_session_maker() as session:
@@ -209,7 +400,7 @@ class AssistantTools:
             )
             return {"task_id": result.id, "kind": "created"}
 
-        if name in {"UpdateTask", "MoveTask"}:
+        if name in {"UpdateTask", "MoveTask", "AddTagToTask", "RemoveTagFromTask"}:
             task_id = int(args["task_id"])
             async with db_helper.async_session_maker() as session:
                 task = await session.get(Task, task_id)
@@ -250,4 +441,24 @@ class AssistantTools:
                 )
             )
             return {"task_id": result.id, "kind": "moved"}
+        if name in {"AddTagToTask", "RemoveTagFromTask"}:
+            data = (AddTagToTask if name == "AddTagToTask" else RemoveTagFromTask).model_validate(
+                args
+            )
+            result = await UpdateTaskUseCase(
+                lambda: UnitOfWork(event_dispatcher=self.dispatcher)
+            ).execute(
+                UpdateTaskCommand(
+                    task_id=data.task_id,
+                    actor_user_id=self.user_id,
+                    changes={},
+                    add_tag_id=data.tag_id if name == "AddTagToTask" else None,
+                    remove_tag_id=data.tag_id if name == "RemoveTagFromTask" else None,
+                )
+            )
+            return {
+                "task_id": result.id,
+                "tag_id": data.tag_id,
+                "kind": "tag_added_to_task" if name == "AddTagToTask" else "tag_removed_from_task",
+            }
         raise ValueError("Unknown write tool")

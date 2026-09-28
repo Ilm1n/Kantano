@@ -212,7 +212,12 @@ class BoardRepository:
         return (await self.session.execute(stmt)).scalar_one_or_none()
 
     async def get_task_for_update(self, task_id: int) -> Task | None:
-        stmt = select(Task).where(Task.id == task_id).options(selectinload(Task.tags))
+        stmt = (
+            select(Task)
+            .where(Task.id == task_id)
+            .options(selectinload(Task.tags))
+            .with_for_update()
+        )
         return (await self.session.execute(stmt)).scalar_one_or_none()
 
     def save_task(self, task: Task) -> None:

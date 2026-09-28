@@ -13,12 +13,22 @@ const actionNames: Record<string, string> = {
   CreateTask: 'Создать задачу',
   UpdateTask: 'Изменить задачу',
   MoveTask: 'Переместить задачу',
+  CreateColumn: 'Создать колонку',
+  RenameColumn: 'Переименовать колонку',
+  MoveColumn: 'Переместить колонку',
+  CreateTag: 'Создать тег',
+  UpdateTag: 'Изменить тег',
+  AddTagToTask: 'Добавить тег задаче',
+  RemoveTagFromTask: 'Убрать тег с задачи',
 };
 const fieldNames: Record<string, string> = {
   title: 'Название', description: 'Описание', task_id: 'Задача #',
   column_id: 'Колонка #', new_column_id: 'Новая колонка #',
   priority: 'Приоритет', assignee_id: 'Исполнитель #',
   deadline_at: 'Срок', tag_ids: 'Метки',
+  name: 'Название', new_name: 'Новое название',
+  before_column_id: 'Перед колонкой #',
+  tag_id: 'Тег #', color: 'Цвет',
 };
 const action = computed(() => store.latestRun?.proposedAction);
 const actionFields = computed(() => Object.entries(action.value?.args ?? {})

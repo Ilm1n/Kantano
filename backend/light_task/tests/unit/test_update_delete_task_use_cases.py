@@ -134,6 +134,27 @@ async def test_update_task_use_case_registers_task_updated_event(
 
 
 @pytest.mark.asyncio
+async def test_add_and_remove_one_tag_preserves_other_task_tags(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    uow = FakeUnitOfWork()
+    repository = FakeTaskRepository(uow.session)
+    repository.task.tags = [SimpleNamespace(id=10), SimpleNamespace(id=11)]
+    monkeypatch.setattr("src.boards.use_cases.BoardRepository", lambda session: repository)
+    use_case = UpdateTaskUseCase(lambda: uow)  # type: ignore[arg-type]
+
+    added = await use_case.execute(
+        UpdateTaskCommand(task_id=123, actor_user_id=7, changes={}, add_tag_id=12)
+    )
+    assert [tag.id for tag in added.tags] == [10, 11, 12]
+
+    removed = await use_case.execute(
+        UpdateTaskCommand(task_id=123, actor_user_id=7, changes={}, remove_tag_id=11)
+    )
+    assert [tag.id for tag in removed.tags] == [10, 12]
+
+
+@pytest.mark.asyncio
 async def test_delete_task_use_case_registers_task_deleted_event(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -91,6 +91,8 @@ class UpdateTaskCommand:
     actor_user_id: int
     changes: dict[str, Any]
     tag_ids: list[int] | None = None
+    add_tag_id: int | None = None
+    remove_tag_id: int | None = None
     client_mutation_id: str | None = None
 
 
