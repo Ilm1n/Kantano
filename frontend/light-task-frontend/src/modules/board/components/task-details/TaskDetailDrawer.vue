@@ -2,13 +2,14 @@
 import { ref, watch, computed, onUnmounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useBoardStore } from "../../store/board.store";
-import { watchDebounced } from "@vueuse/core";
+import { useBreakpoints, watchDebounced } from "@vueuse/core";
 import { useToast } from "primevue/usetoast";
 import { getErrorMessage } from "@/utils/error";
 import { useConfirm } from "primevue/useconfirm";
 import type { TaskPriority, TaskRead, TaskUpdate } from "@/api/client";
 import { useAuthStore } from "@/modules/auth/store/auth.store";
 import { useRealtimeStore } from "@/modules/realtime/store/realtime.store";
+import { useAssistantStore } from "@/modules/assistant/store/assistant.store";
 
 // UI Components
 import Drawer from "primevue/drawer";
@@ -23,6 +24,9 @@ const router = useRouter();
 const store = useBoardStore();
 const authStore = useAuthStore();
 const realtimeStore = useRealtimeStore();
+const assistantStore = useAssistantStore();
+const isWideScreen = useBreakpoints({ wide: 1536 }).greaterOrEqual("wide");
+const besideAssistant = computed(() => assistantStore.isOpen && isWideScreen.value);
 const toast = useToast();
 const confirm = useConfirm();
 
@@ -408,6 +412,8 @@ onUnmounted(() => {
   <Drawer
     v-model:visible="isVisible"
     position="right"
+    :modal="!besideAssistant"
+    :style="besideAssistant ? { right: '420px' } : undefined"
     class="!w-full md:!w-[700px] !bg-white dark:!bg-dark-surface !border-l dark:!border-dark-border !transition-colors !duration-100"
     :pt="{
       mask: { class: 'backdrop-blur-[1px]' },

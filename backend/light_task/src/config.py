@@ -165,6 +165,19 @@ class CacheConfig(BaseModel):
     socket_timeout_seconds: float = Field(default=0.2, gt=0)
 
 
+class AssistantConfig(BaseModel):
+    enabled: bool = False
+    mode: Literal["cloud", "local"] = "cloud"
+    google_api_key: str = ""
+    groq_api_key: str = ""
+    local_base_url: str = "http://host.docker.internal:1234/v1"
+    local_model: str = "google/gemma-4-e4b"
+    local_api_key: str = "lm-studio"
+    primary_model: str = "gemini-3.1-flash-lite"
+    google_fallback_model: str = "gemma-4-26b-a4b-it"
+    groq_model: str = "openai/gpt-oss-20b"
+
+
 class ObservabilityConfig(BaseModel):
     environment: Literal["local", "test", "production"] = "local"
     service_name: str = "kantano-api"
@@ -216,12 +229,21 @@ class Settings(BaseSettings):
     files: Files = Files()
     realtime: RealtimeConfig = RealtimeConfig()
     cache: CacheConfig = CacheConfig()
+    assistant: AssistantConfig = AssistantConfig()
     observability: ObservabilityConfig = ObservabilityConfig()
 
     @model_validator(mode="after")
     def validate_production_email_provider(self) -> "Settings":
         if self.observability.environment == "production" and self.email.provider == "mailpit":
             raise ValueError("Mailpit email provider is not allowed in production")
+        if self.observability.environment == "production" and self.assistant.mode == "local":
+            raise ValueError("Local assistant provider is not allowed in production")
+        if (
+            self.assistant.enabled
+            and self.assistant.mode == "cloud"
+            and not (self.assistant.google_api_key or self.assistant.groq_api_key)
+        ):
+            raise ValueError("At least one cloud assistant API key is required")
         return self
 
 

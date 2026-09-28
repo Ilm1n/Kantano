@@ -3,8 +3,11 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import UTC, datetime
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.assistant.checkpoints import open_checkpointer
+from src.assistant.models import AssistantConversation, AssistantRun
 from src.db.unit_of_work import UnitOfWork
 from src.errors import ErrorCode
 from src.logger import project_logger
@@ -303,6 +306,18 @@ class DeleteProjectUseCase:
                 project = await repository.get_project(command.project_id)
                 if project is None:
                     raise NotFoundError(ErrorCode.PROJECT_NOT_FOUND)
+
+                run_ids = (
+                    await uow.session.scalars(
+                        select(AssistantRun.id)
+                        .join(AssistantConversation)
+                        .where(AssistantConversation.project_id == command.project_id)
+                    )
+                ).all()
+                if run_ids:
+                    async with open_checkpointer() as saver:
+                        for run_id in run_ids:
+                            await saver.adelete_thread(str(run_id))
 
                 affected_user_ids = await repository.get_project_member_user_ids(command.project_id)
                 await repository.delete_project(project)

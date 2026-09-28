@@ -120,6 +120,47 @@ Vite проксирует `/api` и `/ws` на `127.0.0.1:8000`. Для отде
 адрес backend без завершающего `/` и без суффикса `/api`, например
 `VITE_API_URL=http://localhost:8000`.
 
+## ИИ-помощник
+
+Помощник выключен по умолчанию. Для проверки с моделью LM Studio запустите в LM Studio
+сервер OpenAI compatible на порту `1234` и загрузите `google/gemma-4-e4b`. Затем из корня
+репозитория запустите backend с локальным Compose override, а frontend обычной командой:
+
+```bash
+docker compose -f docker-compose.dev.yml -f docker-compose.assistant-local.yml up -d --build backend
+task dev:frontend
+```
+
+Override задаёт `LIGHTTASK_CONFIG__ASSISTANT__ENABLED=true`,
+`LIGHTTASK_CONFIG__ASSISTANT__MODE=local`,
+`LIGHTTASK_CONFIG__ASSISTANT__LOCAL_BASE_URL=http://host.docker.internal:1234/v1` и
+`LIGHTTASK_CONFIG__ASSISTANT__LOCAL_MODEL=google/gemma-4-e4b`. В этом режиме backend
+отправляет запросы только в LM Studio; на облачные модели он не переключается.
+Помощник открывается из левого меню на любой авторизованной странице и из заголовка
+доски. Чаты привязаны к проекту. Перед созданием, изменением и переносом задачи
+помощник показывает действие для подтверждения.
+
+Для облачной проверки замените override на обычный `docker-compose.dev.yml` и задайте
+в локальном `.env`:
+
+```dotenv
+LIGHTTASK_CONFIG__ASSISTANT__ENABLED=true
+LIGHTTASK_CONFIG__ASSISTANT__MODE=cloud
+LIGHTTASK_CONFIG__ASSISTANT__GOOGLE_API_KEY=<google-api-key>
+LIGHTTASK_CONFIG__ASSISTANT__GROQ_API_KEY=<groq-api-key>
+```
+
+Ключ Groq необязателен, но без него резервная цепочка ограничена моделями Google.
+Cloud использует `gemini-3.1-flash-lite`, затем `gemma-4-26b-a4b-it`, затем
+`openai/gpt-oss-20b` через Groq. Доступность и лимиты этих моделей зависят от ключа
+и тарифа провайдера. Ключи остаются только в backend и не записываются в логи.
+Production запрещает режим `local`.
+
+Таблицы `assistant_*` создаёт Alembic. Внутренние таблицы LangGraph подготавливает
+официальный `AsyncPostgresSaver.setup()` в Compose migration шаге до запуска API.
+При запуске backend вне Docker после `uv run alembic upgrade head` выполните
+`uv run python -m src.assistant.setup_checkpointer`.
+
 ## Запуск backend вне Docker
 
 PostgreSQL, Redis и фоновые сервисы можно оставить в Compose:

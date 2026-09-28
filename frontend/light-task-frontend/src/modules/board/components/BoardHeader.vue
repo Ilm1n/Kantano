@@ -8,11 +8,13 @@ import InviteMemberDialog from "@/modules/invitations/components/InviteMemberDia
 import ProjectSettingsDialog from "./ProjectSettingsDialog.vue";
 import { ProjectRole } from "@/api/client";
 import BoardFilters from "./BoardFilters.vue";
+import { useAssistantStore } from "@/modules/assistant/store/assistant.store";
 
 const isSettingsVisible = ref(false);
 const isInviteVisible = ref(false);
 
 const store = useBoardStore();
+const assistantStore = useAssistantStore();
 const router = useRouter();
 
 const goBack = () => {
@@ -62,6 +64,16 @@ const goBack = () => {
 
     <!-- RIGHT: Members & Actions -->
     <div class="flex items-center gap-2 sm:gap-4 shrink-0">
+      <Button
+        icon="pi pi-sparkles"
+        text
+        rounded
+        aria-label="Открыть помощника для этого проекта"
+        title="Помощник"
+        class="!text-primary-600 !w-10 !h-10 !p-0"
+        :disabled="!store.project"
+        @click="store.project && assistantStore.openFromBoard(store.project.id)"
+      />
       <BoardFilters />
       <div
         class="h-6 w-px bg-slate-200 dark:bg-slate-700 hidden sm:block"

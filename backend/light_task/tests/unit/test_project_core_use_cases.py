@@ -43,6 +43,9 @@ class FakeSession:
         self.execute_count += 1
         return None
 
+    async def scalars(self, statement):
+        return SimpleNamespace(all=lambda: [])
+
     async def commit(self) -> None:
         self.commit_count += 1
 
@@ -55,7 +58,7 @@ class FakeSession:
 
 class FakeUnitOfWork:
     def __init__(self) -> None:
-        self.session = object()
+        self.session = FakeSession()
         self.events: list[object] = []
 
     async def __aenter__(self):

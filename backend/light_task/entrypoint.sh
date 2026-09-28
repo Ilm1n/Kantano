@@ -15,6 +15,7 @@ echo "PostgreSQL started at ${DB_HOST}:${DB_PORT}"
 if [ "${LIGHTTASK_SKIP_MIGRATIONS:-0}" != "1" ]; then
   echo "Running migrations..."
   alembic upgrade head
+  python -m src.assistant.setup_checkpointer
 fi
 
 echo "Starting application..."

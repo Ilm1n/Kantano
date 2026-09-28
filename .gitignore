@@ -39,3 +39,4 @@ postgres_data_prod/
 
 tmp/
 .tmp/
+.playwright-mcp/

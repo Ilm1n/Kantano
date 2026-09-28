@@ -6,17 +6,20 @@ from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, ORJSONResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import text
+from sqlalchemy import text, update
 from sqlalchemy.exc import SQLAlchemyError
 
 from src.auth.router import router as auth_router
 
 # модели импортируются для регистрации в metadata
+from src.assistant.models import AssistantConversation, AssistantMessage, AssistantRun  # noqa: F401
+from src.assistant.router import router as assistant_router
 from src.boards.models import BoardColumn, Task  # noqa: F401
 from src.boards.router import router as board_router
 from src.cache.redis import RedisCache
 from src.config import settings
 from src.db.database import db_helper
+from src.db.unit_of_work import UnitOfWork
 from src.errors import ErrorCode, error_response, normalize_error_detail
 from src.invitations.models import ProjectInvitation  # noqa: F401
 from src.invitations.router import router as invitation_router
@@ -45,6 +48,18 @@ observability = initialize_observability(settings.observability)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # startup
+    async with UnitOfWork() as uow:
+        session = uow.session
+        if session is None:
+            raise RuntimeError("UnitOfWork has not been entered")
+        await session.execute(
+            update(AssistantRun)
+            .where(AssistantRun.status == "running")
+            .values(status="interrupted")
+        )
+        await session.execute(
+            update(AssistantRun).where(AssistantRun.status == "executing").values(status="unknown")
+        )
     cache_backend = RedisCache(settings.cache)
     await cache_backend.start()
     app.state.project_read_cache = ProjectReadCache(cache_backend, settings.cache)
@@ -87,6 +102,7 @@ main_app.include_router(user_router, prefix="/api")
 main_app.include_router(registration_router, prefix="/api")
 main_app.include_router(project_router, prefix="/api")
 main_app.include_router(board_router, prefix="/api")
+main_app.include_router(assistant_router, prefix="/api")
 main_app.include_router(tag_router, prefix="/api")
 main_app.include_router(invitation_router, prefix="/api")
 main_app.include_router(realtime_router)
