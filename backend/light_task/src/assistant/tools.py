@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, select
 
 from src.boards.constants import TaskPriority
@@ -68,6 +68,11 @@ class CreateTask(BaseModel):
     deadline_at: datetime | None = None
     tag_ids: list[int] = Field(default_factory=list)
 
+    @field_validator("priority", mode="before")
+    @classmethod
+    def normalize_priority(cls, value: Any) -> Any:
+        return normalize_priority(value)
+
 
 class UpdateTask(BaseModel):
     """Propose updating fields of one task. The user must confirm before execution."""
@@ -82,6 +87,11 @@ class UpdateTask(BaseModel):
         default=None,
         description="Replace all task tags only when explicitly requested; use AddTagToTask or RemoveTagFromTask for one tag",
     )
+
+    @field_validator("priority", mode="before")
+    @classmethod
+    def normalize_priority(cls, value: Any) -> Any:
+        return normalize_priority(value)
 
 
 class MoveTask(BaseModel):
@@ -169,6 +179,23 @@ WRITE_TOOLS = {
     "AddTagToTask",
     "RemoveTagFromTask",
 }
+
+
+def normalize_priority(value: Any) -> Any:
+    if not isinstance(value, str):
+        return value
+    aliases = {
+        "низкий": "LOW",
+        "средний": "MEDIUM",
+        "высокий": "HIGH",
+        "критический": "CRITICAL",
+    }
+    return aliases.get(value.strip().lower(), value.strip().upper())
+
+
+def validate_write(name: str, args: dict[str, Any]) -> dict[str, Any]:
+    schema = next(schema for schema in TOOL_SCHEMAS if schema.__name__ == name)
+    return schema.model_validate(args).model_dump(mode="json", exclude_unset=True)
 
 
 class AssistantTools:

@@ -52,3 +52,4 @@ class MessageCreate(BaseSchema):
 
 class ActionDecision(BaseSchema):
     approve: bool
+    action_id: str = Field(min_length=1, max_length=128)

@@ -31,13 +31,17 @@ const fieldNames: Record<string, string> = {
   tag_id: 'Тег #', color: 'Цвет',
 };
 const action = computed(() => store.latestRun?.proposedAction);
+const priorityLabels: Record<string, string> = {
+  LOW: 'Низкий', MEDIUM: 'Средний', HIGH: 'Высокий', CRITICAL: 'Критический',
+};
 const actionFields = computed(() => Object.entries(action.value?.args ?? {})
   .filter(([key]) => key !== 'tool_call_id')
   .map(([key, value]) => ({
     label: fieldNames[key] ?? key,
-    value: Array.isArray(value) ? value.join(', ') : String(value ?? '—'),
+    value: key === 'priority' ? priorityLabels[String(value)] ?? String(value ?? '—')
+      : Array.isArray(value) ? value.join(', ') : String(value ?? '—'),
   })));
-const canSend = computed(() => Boolean(store.draft.trim()) && !store.isStreaming && !store.isPending && !store.isBusy);
+const canSend = computed(() => Boolean(store.draft.trim()) && !store.isLoading && !store.isStreaming && !store.isPending && !store.isBusy);
 
 function onComposerKeydown(event: KeyboardEvent) {
   if (event.key === 'Enter' && !event.shiftKey) {
@@ -85,7 +89,7 @@ function confirmDeleteChat() {
       <select
         id="assistant-project"
         :value="store.projectId ?? ''"
-        :disabled="store.isStreaming"
+        :disabled="store.isStreaming || store.isLoading"
         class="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700 outline-none focus:border-primary-500 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
         @change="store.selectProject(Number(($event.target as HTMLSelectElement).value))"
       >
@@ -98,10 +102,10 @@ function confirmDeleteChat() {
       <div class="mb-2 flex items-center justify-between">
         <span class="text-xs font-bold text-slate-600 dark:text-slate-300">Чаты проекта</span>
         <div class="flex items-center gap-1">
-          <button v-if="store.conversationId" type="button" title="Удалить текущий чат" aria-label="Удалить текущий чат" :disabled="store.isStreaming" class="rounded-lg px-2 py-1 text-xs text-slate-500 hover:bg-red-50 hover:text-red-600 disabled:opacity-50" @click="confirmDeleteChat">
+          <button v-if="store.conversationId" type="button" title="Удалить текущий чат" aria-label="Удалить текущий чат" :disabled="store.isStreaming || store.isLoading" class="rounded-lg px-2 py-1 text-xs text-slate-500 hover:bg-red-50 hover:text-red-600 disabled:opacity-50" @click="confirmDeleteChat">
             <i class="pi pi-trash" aria-hidden="true"></i>
           </button>
-          <button type="button" :disabled="store.isStreaming" class="rounded-lg px-2 py-1 text-xs font-bold text-primary-600 hover:bg-primary-50 disabled:opacity-50" @click="store.createChat()">
+          <button type="button" :disabled="store.isStreaming || store.isLoading" class="rounded-lg px-2 py-1 text-xs font-bold text-primary-600 hover:bg-primary-50 disabled:opacity-50" @click="store.createChat()">
             <i class="pi pi-plus mr-1" aria-hidden="true"></i>Новый чат
           </button>
         </div>
@@ -111,7 +115,7 @@ function confirmDeleteChat() {
           v-for="chat in store.conversations"
           :key="chat.id"
           type="button"
-          :disabled="store.isStreaming"
+          :disabled="store.isStreaming || store.isLoading"
           :aria-current="store.conversationId === chat.id ? 'true' : undefined"
           class="max-w-40 shrink-0 truncate rounded-full border px-3 py-1.5 text-xs font-medium disabled:opacity-60"
           :class="store.conversationId === chat.id ? 'border-primary-500 bg-primary-50 text-primary-700 dark:bg-primary-500/10 dark:text-primary-300' : 'border-slate-200 text-slate-600 hover:border-primary-300 dark:border-slate-700 dark:text-slate-300'"
@@ -168,14 +172,15 @@ function confirmDeleteChat() {
 
     <footer class="shrink-0 border-t border-slate-200 p-4 dark:border-dark-border">
       <p v-if="store.isPending" class="mb-2 text-xs text-amber-700 dark:text-amber-300">Сначала подтвердите или отклоните действие.</p>
-      <p v-if="store.isBusy && !store.isStreaming" class="mb-2 text-xs text-slate-500">Этот запрос ещё выполняется. Обновите чат позже.</p>
-      <p v-if="store.latestRun?.status === 'unknown'" class="mb-2 text-xs text-amber-700 dark:text-amber-300">Исход изменения неизвестен. Проверьте задачу перед новой попыткой.</p>
+      <p v-if="store.isBusy && !store.isStreaming" class="mb-2 text-xs text-slate-500">Проверяем состояние запроса…</p>
+      <p v-if="store.latestRun?.status === 'interrupted'" class="mb-2 text-xs text-slate-500">Запрос прерван. Можно отправить новое сообщение.</p>
+      <p v-if="store.latestRun?.status === 'unknown'" class="mb-2 text-xs text-amber-700 dark:text-amber-300">Исход изменения неизвестен. Проверьте доску перед новой попыткой.</p>
       <div class="flex items-end gap-2 rounded-xl border border-slate-200 bg-slate-50 p-2 focus-within:border-primary-500 dark:border-slate-700 dark:bg-slate-900">
         <textarea
           v-model="store.draft"
           aria-label="Сообщение помощнику"
           rows="2"
-          :disabled="!store.projectId || store.isPending || store.isBusy || store.isStreaming"
+          :disabled="!store.projectId || store.isLoading || store.isPending || store.isBusy || store.isStreaming"
           placeholder="Спросите о проекте или задаче…"
           class="max-h-32 min-h-12 flex-1 resize-none bg-transparent px-1 py-1 text-sm text-slate-800 outline-none placeholder:text-slate-400 disabled:opacity-60 dark:text-white"
           @keydown="onComposerKeydown"

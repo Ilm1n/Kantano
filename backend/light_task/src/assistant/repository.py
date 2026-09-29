@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.assistant.models import AssistantConversation, AssistantMessage, AssistantRun
@@ -62,10 +62,18 @@ class AssistantRepository:
         )
         return await self.session.scalar(statement)
 
-    async def claim_pending(self, run_id: UUID, next_status: str) -> bool:
+    async def claim_pending(self, run_id: UUID, action_id: str, next_status: str) -> bool:
         statement = (
             update(AssistantRun)
-            .where(AssistantRun.id == run_id, AssistantRun.status == "pending")
+            .where(
+                AssistantRun.id == run_id,
+                AssistantRun.status == "pending",
+                func.coalesce(
+                    AssistantRun.proposed_action["action_id"].as_string(),
+                    AssistantRun.proposed_action["tool_call_id"].as_string(),
+                )
+                == action_id,
+            )
             .values(status=next_status, updated_at=datetime.now(UTC))
             .returning(AssistantRun.id)
         )

@@ -26,7 +26,7 @@ export type AssistantRun = {
   model: string | null;
   stepCount: number;
   fallbackUsed: boolean;
-  proposedAction: { name: string; args: Record<string, unknown> } | null;
+  proposedAction: { name: string; args: Record<string, unknown>; action_id?: string; tool_call_id?: string } | null;
   result: Record<string, unknown> | null;
 };
 

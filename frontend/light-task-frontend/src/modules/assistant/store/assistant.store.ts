@@ -1,4 +1,4 @@
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { defineStore } from 'pinia';
 import { useProjectsStore } from '@/modules/projects/store/projects.store';
 import {
@@ -37,6 +37,28 @@ export const useAssistantStore = defineStore('assistant', () => {
   });
   const isPending = computed(() => latestRun.value?.status === 'pending');
   const isBusy = computed(() => ['running', 'executing'].includes(latestRun.value?.status ?? ''));
+
+  watch([isOpen, projectId, conversationId, isBusy, isStreaming], (_, __, onCleanup) => {
+    if (!isOpen.value || !isBusy.value || isStreaming.value
+      || projectId.value === null || !conversationId.value) return;
+    const currentProjectId = projectId.value;
+    const currentChatId = conversationId.value;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    onCleanup(() => { cancelled = true; clearTimeout(timer); });
+    async function refreshRun() {
+      try {
+        const detail = await getConversation(currentProjectId, currentChatId);
+        if (cancelled) return;
+        messages.value = detail.messages;
+        latestRun.value = detail.latestRun;
+      } catch (cause) {
+        if (!cancelled) error.value = cause instanceof Error ? cause.message : 'Не удалось обновить чат';
+      }
+      if (!cancelled && isBusy.value) timer = setTimeout(refreshRun, 1500);
+    }
+    timer = setTimeout(refreshRun, 1500);
+  });
 
   async function ensureProjects() {
     if (!projectsStore.projects.length) await projectsStore.fetchProjects();
@@ -106,7 +128,8 @@ export const useAssistantStore = defineStore('assistant', () => {
   }
 
   async function createChat(): Promise<string | null> {
-    if (projectId.value === null || isStreaming.value) return null;
+    if (projectId.value === null || isStreaming.value || isLoading.value) return null;
+    isLoading.value = true;
     try {
       const chat = await createConversation(projectId.value);
       conversations.value = [chat, ...conversations.value];
@@ -115,6 +138,8 @@ export const useAssistantStore = defineStore('assistant', () => {
     } catch (cause) {
       error.value = cause instanceof Error ? cause.message : 'Не удалось создать чат';
       return null;
+    } finally {
+      isLoading.value = false;
     }
   }
 
@@ -167,7 +192,7 @@ export const useAssistantStore = defineStore('assistant', () => {
 
   async function send() {
     const content = draft.value.trim();
-    if (!content || isStreaming.value || isPending.value || isBusy.value || projectId.value === null) return;
+    if (!content || isLoading.value || isStreaming.value || isPending.value || isBusy.value || projectId.value === null) return;
     const originalDraftKey = draftKey.value;
     let chatId = conversationId.value;
     if (!chatId) chatId = await createChat();
@@ -187,6 +212,7 @@ export const useAssistantStore = defineStore('assistant', () => {
     } catch (cause) {
       draft.value = content;
       error.value = cause instanceof Error ? cause.message : 'Не удалось отправить сообщение';
+      await selectConversationAfterStream(projectId.value, chatId);
     } finally {
       isStreaming.value = false;
     }
@@ -198,13 +224,16 @@ export const useAssistantStore = defineStore('assistant', () => {
     const currentProjectId = projectId.value;
     const currentChatId = conversationId.value;
     const runId = latestRun.value.id;
+    const actionId = latestRun.value.proposedAction?.action_id
+      ?? latestRun.value.proposedAction?.tool_call_id;
+    if (!actionId) return;
     isStreaming.value = true;
     streamedText.value = '';
     error.value = '';
     try {
       await streamAssistant(
         currentProjectId, currentChatId, `/runs/${runId}/decision`,
-        { approve }, handleEvent,
+        { approve, action_id: actionId }, handleEvent,
       );
       await selectConversationAfterStream(currentProjectId, currentChatId);
     } catch (cause) {

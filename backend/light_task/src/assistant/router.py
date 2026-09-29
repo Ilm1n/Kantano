@@ -1,19 +1,20 @@
 # ruff: noqa: RUF001
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from time import perf_counter
 from typing import Annotated, Any
 from uuid import UUID
 
+import anyio
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage
 from langgraph.types import Command
-from sqlalchemy import update
+from sqlalchemy import case, update
+from starlette.types import Receive, Scope, Send
 
 from src.assistant.checkpoints import open_checkpointer
 from src.assistant.graph import build_graph
@@ -178,6 +179,99 @@ async def persist_run_state(run_id: UUID, **values: Any) -> None:
         )
 
 
+async def interrupt_active_run(run_id: UUID) -> None:
+    async with UnitOfWork() as uow:
+        session = uow.session
+        if session is None:
+            raise RuntimeError("UnitOfWork has not been entered")
+        await session.execute(
+            update(AssistantRun)
+            .where(AssistantRun.id == run_id, AssistantRun.status.in_(("running", "executing")))
+            .values(
+                status=case((AssistantRun.status == "executing", "unknown"), else_="interrupted")
+            )
+        )
+
+
+class AssistantStreamingResponse(StreamingResponse):
+    def __init__(self, stream: AsyncGenerator[str, None], run_id: UUID) -> None:
+        super().__init__(
+            stream,
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"},
+        )
+        self.run_id = run_id
+        self.stream = stream
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            # Disconnect cancellation also cancels awaits in the generator's cleanup.
+            # Finalize outside that generator and protect the DB transaction from cancellation.
+            with anyio.move_on_after(10, shield=True):
+                try:
+                    await interrupt_active_run(self.run_id)
+                except Exception as exc:
+                    logger.error(
+                        "assistant_run_cleanup_failed run_id=%s error_type=%s",
+                        self.run_id,
+                        type(exc).__name__,
+                    )
+                finally:
+                    await self.stream.aclose()
+
+
+def action_summary(outcome: dict[str, Any]) -> str:
+    if outcome["status"] == "rejected":
+        return "Действие отклонено."
+    if outcome["status"] == "failed":
+        return outcome.get("error", "Действие не выполнено.")
+    labels = {
+        "created": f"Задача #{outcome.get('task_id')} создана.",
+        "updated": f"Задача #{outcome.get('task_id')} изменена.",
+        "moved": f"Задача #{outcome.get('task_id')} перемещена.",
+        "column_created": f"Колонка #{outcome.get('column_id')} создана.",
+        "column_renamed": f"Колонка #{outcome.get('column_id')} переименована.",
+        "column_moved": f"Колонка #{outcome.get('column_id')} перемещена.",
+        "tag_created": f"Тег #{outcome.get('tag_id')} создан.",
+        "tag_updated": f"Тег #{outcome.get('tag_id')} изменён.",
+        "tag_added_to_task": f"Тег добавлен к задаче #{outcome.get('task_id')}.",
+        "tag_removed_from_task": f"Тег снят с задачи #{outcome.get('task_id')}.",
+    }
+    return labels.get(outcome.get("kind", ""), "Действие выполнено.")
+
+
+async def fail_run(run_id: UUID, conversation_id: UUID) -> str:
+    async with UnitOfWork() as uow:
+        session = uow.session
+        if session is None:
+            raise RuntimeError("UnitOfWork has not been entered")
+        run = await session.get(AssistantRun, run_id)
+        if run is None:
+            return "Не удалось выполнить запрос."
+        result = dict(run.result or {})
+        if run.status == "executing":
+            run.status = "unknown"
+            message = "Исход изменения неизвестен. Проверьте доску перед новой попыткой."
+        else:
+            run.status = "failed"
+            message = (
+                "Не удалось продолжить запрос. Результаты выполненных действий сохранены."
+                if result.get("actions")
+                else "Не удалось выполнить запрос. Попробуйте ещё раз."
+            )
+        result["error"] = message
+        run.result = result
+        run.proposed_action = None
+        session.add(
+            AssistantMessage(
+                conversation_id=conversation_id, role="assistant", content=message, references=[]
+            )
+        )
+    return message
+
+
 async def stream_graph(
     *,
     run_id: UUID,
@@ -186,17 +280,51 @@ async def stream_graph(
     user_id: int,
     request: Request,
     input_value: Any,
-    approved: bool | None = None,
-) -> AsyncIterator[str]:
+) -> AsyncGenerator[str, None]:
     start = perf_counter()
     publisher = get_event_publisher(request)
     cache = get_project_read_cache(request)
     tools = AssistantTools(project_id, user_id, publisher, cache)
-    config = {"configurable": {"thread_id": str(run_id)}}
-    yield sse("run", {"run_id": str(run_id), "status": "running"})
+    config = {"configurable": {"thread_id": str(run_id)}, "recursion_limit": 100}
+
+    async def record_action_result(outcomes: list[dict[str, Any]]) -> None:
+        # Save a known mutation result before any further LLM call or checkpoint write.
+        with anyio.fail_after(10, shield=True):
+            async with UnitOfWork() as uow:
+                session = uow.session
+                if session is None:
+                    raise RuntimeError("UnitOfWork has not been entered")
+                outcome = outcomes[-1]
+                references = (
+                    [{"type": "task", "id": outcome["task_id"]}]
+                    if outcome.get("task_id") and outcome["status"] == "completed"
+                    else []
+                )
+                session.add(
+                    AssistantMessage(
+                        conversation_id=conversation_id,
+                        role="assistant",
+                        content=action_summary(outcome),
+                        references=references,
+                    )
+                )
+                await session.execute(
+                    update(AssistantRun)
+                    .where(AssistantRun.id == run_id)
+                    .values(status="running", proposed_action=None, result={"actions": outcomes})
+                )
+        logger.info(
+            "assistant_action run_id=%s conversation_id=%s tool=%s result=%s",
+            run_id,
+            conversation_id,
+            outcome["tool"],
+            outcome["status"],
+        )
+
     try:
+        yield sse("run", {"run_id": str(run_id), "status": "running"})
         async with open_checkpointer() as saver:
-            graph = build_graph(saver, tools)
+            graph = build_graph(saver, tools, on_action_result=record_action_result)
             streamed_node_text = ""
             async for mode, event in graph.astream(
                 input_value, config, stream_mode=["messages", "updates"]
@@ -244,7 +372,12 @@ async def stream_graph(
                 messages = state.get("messages", [])
                 answer = messages[-1] if messages else None
                 content = public_text(answer.content) if isinstance(answer, AIMessage) else ""
-                final_status = "rejected" if approved is False else "completed"
+                outcomes = state.get("action_results", [])
+                final_status = "completed"
+                if outcomes and all(outcome["status"] == "rejected" for outcome in outcomes):
+                    final_status = "rejected"
+                elif outcomes and all(outcome["status"] == "failed" for outcome in outcomes):
+                    final_status = "failed"
                 async with UnitOfWork() as uow:
                     session = uow.session
                     if session is None:
@@ -263,7 +396,7 @@ async def stream_graph(
                         .values(
                             status=final_status,
                             proposed_action=None,
-                            result=state.get("tool_result"),
+                            result={"actions": outcomes} if outcomes else state.get("tool_result"),
                             **metadata,
                         )
                     )
@@ -282,33 +415,24 @@ async def stream_graph(
                 final_status,
                 int((perf_counter() - start) * 1000),
             )
-    except asyncio.CancelledError:
-        await persist_run_state(run_id, status="interrupted")
-        raise
     except Exception as exc:
-        await persist_run_state(
-            run_id,
-            status="unknown" if approved else "failed",
-            result={"error": "Run stopped; review before retrying any action"},
-        )
+        with anyio.fail_after(10, shield=True):
+            message = await fail_run(run_id, conversation_id)
+        cause = exc
+        while cause.__cause__ is not None:
+            cause = cause.__cause__
         logger.error(
-            "assistant_run_failed run_id=%s conversation_id=%s error_type=%s",
+            "assistant_run_failed run_id=%s conversation_id=%s error_type=%s cause_type=%s",
             run_id,
             conversation_id,
             type(exc).__name__,
+            type(cause).__name__,
         )
-        yield sse("error", {"message": "Не удалось выполнить запрос", "run_id": str(run_id)})
+        yield sse("error", {"message": message, "run_id": str(run_id)})
 
 
-def stream_response(stream: AsyncIterator[str]) -> StreamingResponse:
-    return StreamingResponse(
-        stream,
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache, no-transform",
-            "X-Accel-Buffering": "no",
-        },
-    )
+def stream_response(stream: AsyncGenerator[str, None], run_id: UUID) -> StreamingResponse:
+    return AssistantStreamingResponse(stream, run_id)
 
 
 @router.post("/conversations/{conversation_id}/runs", dependencies=[Depends(require_enabled)])
@@ -361,7 +485,8 @@ async def start_run(
             user_id=user.sub,
             request=request,
             input_value={"messages": graph_history},
-        )
+        ),
+        run_id,
     )
 
 
@@ -387,7 +512,7 @@ async def decide_action(
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Run not found")
         repository = AssistantRepository(session)
         claimed = await repository.claim_pending(
-            run_id, "executing" if body.approve else "rejected"
+            run_id, body.action_id, "executing" if body.approve else "running"
         )
         if not claimed:
             raise HTTPException(status.HTTP_409_CONFLICT, "Action already resolved")
@@ -399,6 +524,6 @@ async def decide_action(
             user_id=user.sub,
             request=request,
             input_value=Command(resume=body.approve),
-            approved=body.approve,
-        )
+        ),
+        run_id,
     )
