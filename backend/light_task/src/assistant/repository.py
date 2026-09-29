@@ -80,6 +80,7 @@ class AssistantRepository:
             .where(
                 AssistantRun.id == run_id,
                 AssistantRun.status == "pending",
+                AssistantRun.stop_requested.is_(False),
                 func.coalesce(
                     AssistantRun.proposed_action["action_id"].as_string(),
                     AssistantRun.proposed_action["tool_call_id"].as_string(),
@@ -110,8 +111,15 @@ class AssistantRepository:
         )
         return await self.session.scalar(statement)
 
-    async def get_run(self, run_id: UUID) -> AssistantRun | None:
-        return await self.session.get(AssistantRun, run_id)
+    async def get_run(self, run_id: UUID, *, for_update: bool = False) -> AssistantRun | None:
+        return await self.session.get(AssistantRun, run_id, with_for_update=for_update)
+
+    async def stop_requested(self, run_id: UUID) -> bool:
+        return bool(
+            await self.session.scalar(
+                select(AssistantRun.stop_requested).where(AssistantRun.id == run_id)
+            )
+        )
 
     def add_conversation(self, conversation: AssistantConversation) -> None:
         self.session.add(conversation)

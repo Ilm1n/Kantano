@@ -10,7 +10,7 @@ from uuid import UUID, uuid5
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.assistant.cleanup import CheckpointCleanup
-from src.assistant.contracts import EXECUTING_RUN_STATUSES, RunStatus
+from src.assistant.contracts import ACTIVE_RUN_STATUSES, EXECUTING_RUN_STATUSES, RunStatus
 from src.assistant.dto import (
     ConversationScope,
     CreateConversationCommand,
@@ -20,6 +20,7 @@ from src.assistant.dto import (
     RunExecution,
     RunMetadata,
     StartRunCommand,
+    StopRunCommand,
 )
 from src.assistant.models import AssistantConversation, AssistantMessage, AssistantRun
 from src.assistant.queries import AssistantProjectQueries
@@ -215,6 +216,24 @@ class DecideActionUseCase:
         )
 
 
+class StopRunUseCase:
+    def __init__(self, uow_factory: Callable[[], UnitOfWork]) -> None:
+        self._uow_factory = uow_factory
+
+    async def execute(self, command: StopRunCommand) -> None:
+        async with self._uow_factory() as uow:
+            repository = uow_repository(uow)
+            await authorized_chat(repository, command, lock=True)
+            run = await repository.get_run(command.run_id, for_update=True)
+            if run is None or run.conversation_id != command.conversation_id:
+                raise NotFoundError(ErrorCode.ASSISTANT_RUN_NOT_FOUND)
+            if run.status in ACTIVE_RUN_STATUSES:
+                run.stop_requested = True
+                # A finished SSE may already have produced an approval card.
+                if run.status == "pending":
+                    await cancel_run(repository, RunExecution(run_id=run.id, scope=command), run)
+
+
 class AssistantRunLifecycle:
     def __init__(self, uow_factory: Callable[[], UnitOfWork]) -> None:
         self._uow_factory = uow_factory
@@ -223,26 +242,43 @@ class AssistantRunLifecycle:
         async with self._uow_factory() as uow:
             await uow_repository(uow).interrupt_run(run_id)
 
+    async def stop_requested(self, run_id: UUID) -> bool:
+        async with self._uow_factory() as uow:
+            return await uow_repository(uow).stop_requested(run_id)
+
+    async def cancel(self, execution: RunExecution) -> str:
+        async with self._uow_factory() as uow:
+            repository = uow_repository(uow)
+            run = await repository.get_run(execution.run_id, for_update=True)
+            if run is None:
+                raise NotFoundError(ErrorCode.ASSISTANT_RUN_NOT_FOUND)
+            return await cancel_run(repository, execution, run)
+
     async def pending(
         self, execution: RunExecution, action: dict[str, Any], metadata: RunMetadata
-    ) -> None:
+    ) -> RunStatus:
         async with self._uow_factory() as uow:
-            await uow_repository(uow).update_run(
+            repository = uow_repository(uow)
+            run = await repository.get_run(execution.run_id, for_update=True)
+            if run is not None and run.stop_requested:
+                await cancel_run(repository, execution, run)
+                return "cancelled"
+            await repository.update_run(
                 execution.run_id, status="pending", proposed_action=action, **asdict(metadata)
             )
+        return "pending"
 
     async def record_results(
         self, execution: RunExecution, outcomes: list[dict[str, Any]], executing: bool
     ) -> None:
         async with self._uow_factory() as uow:
             repository = uow_repository(uow)
-            message = await self._result_message(repository, execution)
+            message = await result_message(repository, execution)
             message.content = results_summary(outcomes)
             message.references = action_references(outcomes)
             await repository.update_run(
                 execution.run_id,
                 status="executing" if executing else "running",
-                proposed_action=None,
                 result={"actions": outcomes},
             )
 
@@ -261,7 +297,10 @@ class AssistantRunLifecycle:
             status = "failed"
         async with self._uow_factory() as uow:
             repository = uow_repository(uow)
-            message = await self._result_message(repository, execution)
+            run = await repository.get_run(execution.run_id, for_update=True)
+            if run is not None and run.stop_requested:
+                return "cancelled", await cancel_run(repository, execution, run)
+            message = await result_message(repository, execution)
             message.content = content or results_summary(outcomes)
             references = [*references, *action_references(outcomes)]
             message.references = list(
@@ -306,20 +345,68 @@ class AssistantRunLifecycle:
             )
         return text
 
-    async def _result_message(
-        self, repository: AssistantRepository, execution: RunExecution
-    ) -> AssistantMessage:
-        message_id = uuid5(execution.run_id, "action-results")
-        message = await repository.get_message(message_id)
-        if message is None:
-            message = AssistantMessage(
-                id=message_id, conversation_id=execution.scope.conversation_id, role="assistant"
+
+async def result_message(
+    repository: AssistantRepository, execution: RunExecution
+) -> AssistantMessage:
+    message_id = uuid5(execution.run_id, "action-results")
+    message = await repository.get_message(message_id)
+    if message is None:
+        message = AssistantMessage(
+            id=message_id, conversation_id=execution.scope.conversation_id, role="assistant"
+        )
+        repository.add_message(message)
+    return message
+
+
+async def cancel_run(
+    repository: AssistantRepository, execution: RunExecution, run: AssistantRun
+) -> str:
+    outcomes = list((run.result or {}).get("actions", []))
+    text = ""
+    if any(item["status"] == "completed" for item in outcomes):
+        proposal = run.proposed_action
+        if proposal:
+            steps = (
+                (proposal.get("display") or proposal["args"])["steps"]
+                if proposal["name"] == "ExecutePlan"
+                else [
+                    {
+                        "id": "single",
+                        "tool": proposal["name"],
+                        "args": proposal["args"],
+                        "display": proposal.get("display"),
+                    }
+                ]
             )
-            repository.add_message(message)
-        return message
+            finished = {
+                item.get("step_id")
+                for item in outcomes
+                if item.get("action_id") == proposal.get("action_id", proposal["tool_call_id"])
+            }
+            for step in steps:
+                if step["id"] not in finished:
+                    outcomes.append(
+                        {
+                            "status": "cancelled",
+                            "tool": step["tool"],
+                            "step_id": step["id"],
+                            "error": unperformed_summary(step),
+                        }
+                    )
+        text = "Остановлено.\n\n" + results_summary(outcomes)
+        message = await result_message(repository, execution)
+        message.content = text
+        message.references = action_references(outcomes)
+    run.status = "cancelled"
+    run.proposed_action = None
+    run.result = {"actions": outcomes} if outcomes else None
+    return text
 
 
 def action_summary(outcome: dict[str, Any]) -> str:
+    if outcome["status"] == "cancelled":
+        return outcome["error"]
     if outcome["status"] == "rejected":
         return "Действие отклонено."
     if outcome["status"] == "failed":
@@ -364,3 +451,29 @@ def results_summary(outcomes: list[dict[str, Any]]) -> str:
     return f"Выполнено действий: {completed}.\n\n" + "\n".join(
         f"- {action_summary(outcome)}" for outcome in outcomes
     )
+
+
+def unperformed_summary(step: dict[str, Any]) -> str:
+    args = step["args"]
+    display = step.get("display") or {}
+    name = (
+        args.get("title")
+        or args.get("name")
+        or args.get("new_name")
+        or display.get("task_id")
+        or display.get("column_id")
+        or display.get("tag_id")
+    )
+    labels = {
+        "CreateTask": "Не создана задача",
+        "CreateColumn": "Не создана колонка",
+        "CreateTag": "Не создан тег",
+        "UpdateTask": "Не изменена задача",
+        "MoveTask": "Не перемещена задача",
+        "RenameColumn": "Не переименована колонка",
+        "MoveColumn": "Не перемещена колонка",
+        "UpdateTag": "Не изменён тег",
+        "AddTagToTask": "Не добавлен тег к задаче",
+        "RemoveTagFromTask": "Не снят тег с задачи",
+    }
+    return labels[step["tool"]] + (f" «{name}»." if name else ".")

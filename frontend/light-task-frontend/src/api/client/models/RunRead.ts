@@ -11,6 +11,7 @@ export type RunRead = {
     model: (string | null);
     stepCount: number;
     fallbackUsed: boolean;
+    stopRequested?: boolean;
     proposedAction: (ProposedAction | null);
     result: (RunResult | null);
     createdAt: string;
@@ -26,5 +27,6 @@ export namespace RunRead {
         FAILED = 'failed',
         INTERRUPTED = 'interrupted',
         UNKNOWN = 'unknown',
+        CANCELLED = 'cancelled',
     }
 }

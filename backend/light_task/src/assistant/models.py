@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Index, String, Text, Uuid, func
+from sqlalchemy import JSON, DateTime, ForeignKey, Index, String, Text, Uuid, false, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.db.base import Base
@@ -61,6 +61,7 @@ class AssistantRun(Base, TimestampMixin):
     model: Mapped[str | None] = mapped_column(String(100))
     step_count: Mapped[int] = mapped_column(default=0)
     fallback_used: Mapped[bool] = mapped_column(default=False)
+    stop_requested: Mapped[bool] = mapped_column(default=False, server_default=false())
     proposed_action: Mapped[dict | None] = mapped_column(JSON)
     result: Mapped[dict | None] = mapped_column(JSON)
 

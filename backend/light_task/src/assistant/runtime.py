@@ -16,7 +16,7 @@ from langgraph.types import Command
 
 from src.assistant.checkpoints import open_checkpointer
 from src.assistant.dto import ProjectScope, RunExecution, RunMetadata
-from src.assistant.graph import AssistantState, build_graph
+from src.assistant.graph import AssistantState, RunStoppedError, build_graph
 from src.assistant.tools import AssistantTools
 from src.assistant.use_cases import AssistantRunLifecycle
 
@@ -91,7 +91,12 @@ class AssistantRuntime:
         try:
             yield "run", {"run_id": str(run_id), "status": "running"}
             async with self._checkpointer_factory() as saver:
-                graph = build_graph(saver, tools, on_action_result=record_action_result)
+                graph = build_graph(
+                    saver,
+                    tools,
+                    on_action_result=record_action_result,
+                    should_stop=lambda: self._lifecycle.stop_requested(run_id),
+                )
                 streamed_node_text = ""
                 async for mode, event in graph.astream(
                     input_value, config, stream_mode=["messages", "updates"]
@@ -128,9 +133,14 @@ class AssistantRuntime:
                     action = state.get("proposed_action")
                     if action is None:
                         raise RuntimeError("Missing pending action")
-                    await self._lifecycle.pending(execution, action, run_metadata)
-                    yield "approval_required", {"action": action, **asdict(run_metadata)}
-                    final_status = "pending"
+                    final_status = await self._lifecycle.pending(execution, action, run_metadata)
+                    if final_status == "pending":
+                        yield "approval_required", {"action": action, **asdict(run_metadata)}
+                    else:
+                        yield (
+                            "done",
+                            {"status": final_status, "message": "", **asdict(run_metadata)},
+                        )
                 else:
                     messages = state.get("messages", [])
                     answer = messages[-1] if messages else None
@@ -159,6 +169,13 @@ class AssistantRuntime:
                     final_status,
                     int((perf_counter() - start) * 1000),
                 )
+        except RunStoppedError:
+            with anyio.fail_after(10, shield=True):
+                message = await self._lifecycle.cancel(execution)
+            logger.info(
+                "assistant_run_stopped run_id=%s conversation_id=%s", run_id, conversation_id
+            )
+            yield "done", {"status": "cancelled", "message": message}
         except Exception as exc:
             with anyio.fail_after(10, shield=True):
                 message = await self._lifecycle.fail(execution)

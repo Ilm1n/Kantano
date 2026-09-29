@@ -39,6 +39,11 @@ class DecideActionCommand(ConversationScope):
 
 
 @dataclass(frozen=True, kw_only=True)
+class StopRunCommand(ConversationScope):
+    run_id: UUID
+
+
+@dataclass(frozen=True, kw_only=True)
 class RunExecution:
     run_id: UUID
     scope: ConversationScope

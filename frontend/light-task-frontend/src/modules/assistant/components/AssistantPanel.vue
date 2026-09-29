@@ -1,11 +1,14 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import { useRoute } from 'vue-router';
 import { useConfirm } from 'primevue/useconfirm';
 import MarkdownIt from 'markdown-it';
 import { useAssistantStore } from '../store/assistant.store';
 import { actionFields } from '../presentation';
 
 const store = useAssistantStore();
+const route = useRoute();
+const canOpenProject = computed(() => store.projectId !== null && (route.name !== 'project-board' || Number(route.params.projectId) !== store.projectId));
 const confirm = useConfirm();
 const markdown = new MarkdownIt({ html: false, linkify: false, breaks: true });
 markdown.disable('image');
@@ -73,16 +76,21 @@ function confirmDeleteChat() {
 
     <div class="border-b border-slate-200 px-4 py-3 dark:border-dark-border">
       <label for="assistant-project" class="mb-1 block text-[11px] font-bold uppercase tracking-wide text-slate-500">Проект</label>
-      <select
-        id="assistant-project"
-        :value="store.projectId ?? ''"
-        :disabled="store.isStreaming || store.isLoading"
-        class="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700 outline-none focus:border-primary-500 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-        @change="store.selectProject(Number(($event.target as HTMLSelectElement).value))"
-      >
-        <option v-if="!store.projects.length" value="">Нет проектов</option>
-        <option v-for="project in store.projects" :key="project.id" :value="project.id">{{ project.name }}</option>
-      </select>
+      <div class="flex items-center gap-2">
+        <select
+          id="assistant-project"
+          :value="store.projectId ?? ''"
+          :disabled="store.isStreaming || store.isLoading"
+          class="min-w-0 flex-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700 outline-none focus:border-primary-500 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+          @change="store.selectProject(Number(($event.target as HTMLSelectElement).value))"
+        >
+          <option v-if="!store.projects.length" value="">Нет проектов</option>
+          <option v-for="project in store.projects" :key="project.id" :value="project.id">{{ project.name }}</option>
+        </select>
+        <router-link v-if="canOpenProject" :to="{ name: 'project-board', params: { projectId: store.projectId } }" aria-label="Открыть доску проекта" title="Открыть доску проекта" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-primary-600 hover:bg-primary-50 dark:hover:bg-slate-800">
+          <i class="pi pi-arrow-right" aria-hidden="true"></i>
+        </router-link>
+      </div>
     </div>
 
     <div v-if="store.projectId !== null" class="border-b border-slate-200 px-4 py-3 dark:border-dark-border">
@@ -138,7 +146,7 @@ function confirmDeleteChat() {
       <div v-if="store.streamedText" class="assistant-markdown max-w-[90%] break-words rounded-2xl rounded-bl-sm bg-slate-100 px-3.5 py-2.5 text-sm leading-6 text-slate-800 dark:bg-slate-800 dark:text-slate-100" v-html="renderMarkdown(store.streamedText)">
       </div>
       <div v-if="store.isStreaming && !store.streamedText" class="flex items-center gap-2 text-xs text-slate-500">
-        <i class="pi pi-spin pi-spinner" aria-hidden="true"></i>Помощник работает…
+        <i class="pi pi-spin pi-spinner" aria-hidden="true"></i>{{ store.isStopping ? 'Останавливаем…' : 'Помощник работает…' }}
       </div>
 
       <div v-if="store.isPending && action" class="rounded-xl border border-amber-300 bg-amber-50 p-4 dark:border-amber-700 dark:bg-amber-950/30">
@@ -177,7 +185,10 @@ function confirmDeleteChat() {
           class="max-h-32 min-h-12 flex-1 resize-none bg-transparent px-1 py-1 text-sm text-slate-800 outline-none placeholder:text-slate-400 disabled:opacity-60 dark:text-white"
           @keydown="onComposerKeydown"
         ></textarea>
-        <button type="button" aria-label="Отправить" :disabled="!canSend" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary-600 text-white disabled:bg-slate-300 dark:disabled:bg-slate-700" @click="store.send()">
+        <button v-if="store.isStreaming || store.isBusy" type="button" aria-label="Остановить выполнение" title="Остановить выполнение" :disabled="!store.canStop || store.isStopping" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary-600 text-white disabled:bg-slate-300 dark:disabled:bg-slate-700" @click="store.stop()">
+          <i :class="store.isStopping ? 'pi pi-spin pi-spinner' : 'pi pi-stop'" aria-hidden="true"></i>
+        </button>
+        <button v-else type="button" aria-label="Отправить" :disabled="!canSend" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary-600 text-white disabled:bg-slate-300 dark:disabled:bg-slate-700" @click="store.send()">
           <i class="pi pi-arrow-up" aria-hidden="true"></i>
         </button>
       </div>

@@ -25,7 +25,7 @@ export type StreamEvent =
   | { type: 'delta'; data: { text: string } }
   | { type: 'reset'; data: Record<string, never> }
   | { type: 'approval_required'; data: { action: AssistantRun['proposedAction']; provider: string; model: string } }
-  | { type: 'done'; data: { status: AssistantRun['status']; message: string; provider: string; model: string } }
+  | { type: 'done'; data: { status: AssistantRun['status']; message: string; provider?: string; model?: string } }
   | { type: 'error'; data: { message: string; run_id: string } };
 
 const path = (projectId: number, chatId?: string) =>
@@ -50,6 +50,12 @@ export async function getConversation(projectId: number, chatId: string): Promis
 export async function deleteConversation(projectId: number, chatId: string): Promise<void> {
   await apiClient.assistant.deleteConversationApiProjectsProjectIdAssistantConversationsConversationIdDelete(
     projectId, chatId,
+  );
+}
+
+export async function stopRun(projectId: number, chatId: string, runId: string): Promise<void> {
+  await apiClient.assistant.stopRunApiProjectsProjectIdAssistantConversationsConversationIdRunsRunIdStopPost(
+    projectId, chatId, runId,
   );
 }
 

@@ -15,6 +15,7 @@ from src.assistant.use_cases import (
     GetConversationUseCase,
     ListConversationsUseCase,
     StartRunUseCase,
+    StopRunUseCase,
 )
 from src.boards.events import BoardsDomainEventDispatcher
 from src.config import settings
@@ -59,6 +60,10 @@ def get_start_run_use_case() -> StartRunUseCase:
 
 def get_decide_action_use_case() -> DecideActionUseCase:
     return DecideActionUseCase(UnitOfWork)
+
+
+def get_stop_run_use_case() -> StopRunUseCase:
+    return StopRunUseCase(UnitOfWork)
 
 
 def make_assistant_tools(

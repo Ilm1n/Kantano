@@ -158,4 +158,30 @@ export class AssistantService {
             },
         });
     }
+    /**
+     * Stop Run
+     * @param projectId
+     * @param conversationId
+     * @param runId
+     * @returns void
+     * @throws ApiError
+     */
+    public stopRunApiProjectsProjectIdAssistantConversationsConversationIdRunsRunIdStopPost(
+        projectId: number,
+        conversationId: string,
+        runId: string,
+    ): CancelablePromise<void> {
+        return this.httpRequest.request({
+            method: 'POST',
+            url: '/api/projects/{project_id}/assistant/conversations/{conversation_id}/runs/{run_id}/stop',
+            path: {
+                'project_id': projectId,
+                'conversation_id': conversationId,
+                'run_id': runId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
 }

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
 import { nextTick } from 'vue';
-import { deleteConversation, getConversation, listConversations, streamAssistant } from '../api';
+import { deleteConversation, getConversation, listConversations, stopRun, streamAssistant } from '../api';
 import type { AssistantRun, ChatDetail, StreamEvent } from '../api';
 import { useAssistantStore } from './assistant.store';
 
@@ -10,7 +10,7 @@ vi.mock('@/modules/projects/store/projects.store', () => ({
 }));
 vi.mock('../api', () => ({
   createConversation: vi.fn(), deleteConversation: vi.fn(),
-  getConversation: vi.fn(), listConversations: vi.fn(), streamAssistant: vi.fn(),
+  getConversation: vi.fn(), listConversations: vi.fn(), stopRun: vi.fn(), streamAssistant: vi.fn(),
 }));
 
 const detail = (status: AssistantRun['status']): ChatDetail => ({
@@ -30,6 +30,68 @@ describe('assistant stream recovery', () => {
     vi.mocked(listConversations).mockResolvedValue([detail('running').conversation]);
   });
   afterEach(() => { vi.useRealTimers(); });
+
+  it('requests a server stop once, keeps SSE alive and silently clears a cancelled answer', async () => {
+    let finish!: () => void;
+    let eventHandler!: (event: StreamEvent) => void;
+    let signal!: AbortSignal;
+    vi.mocked(getConversation).mockResolvedValueOnce(detail('completed')).mockResolvedValue(detail('cancelled'));
+    vi.mocked(streamAssistant).mockImplementation(async (_p, _c, _r, _b, onEvent, abortSignal) => {
+      eventHandler = onEvent;
+      signal = abortSignal!;
+      onEvent({ type: 'run', data: { run_id: 'run', status: 'running' } });
+      onEvent({ type: 'delta', data: { text: 'Partial answer' } });
+      await new Promise<void>((resolve) => { finish = resolve; });
+    });
+    const store = useAssistantStore();
+    await store.selectProject(1);
+    store.draft = 'Question';
+    const sending = store.send();
+    await nextTick();
+    expect(store.canStop).toBe(true);
+    await store.stop();
+    await store.stop();
+    expect(stopRun).toHaveBeenCalledExactlyOnceWith(1, 'chat', 'run');
+    expect(signal.aborted).toBe(false);
+    expect(store.isStreaming).toBe(true);
+    eventHandler({ type: 'done', data: { status: 'cancelled', message: '' } });
+    finish();
+    await sending;
+    expect(store.isStopping).toBe(false);
+    expect(store.isBusy).toBe(false);
+    expect(store.streamedText).toBe('');
+    expect(store.messages).toEqual([]);
+    expect(store.error).toBe('');
+    store.$dispose();
+  });
+
+  it('stops a restored active run and reloads its persisted result', async () => {
+    vi.mocked(getConversation).mockResolvedValueOnce(detail('executing')).mockResolvedValue(detail('cancelled'));
+    const store = useAssistantStore();
+    await store.selectProject(1);
+    await store.stop();
+    expect(stopRun).toHaveBeenCalledExactlyOnceWith(1, 'chat', 'run');
+    expect(store.latestRun?.status).toBe('cancelled');
+    expect(store.isBusy).toBe(false);
+    expect(streamAssistant).not.toHaveBeenCalled();
+    store.$dispose();
+  });
+
+  it('ignores stop completion after logout', async () => {
+    let finish!: () => void;
+    vi.mocked(getConversation).mockResolvedValue(detail('running'));
+    vi.mocked(stopRun).mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+    const store = useAssistantStore();
+    await store.selectProject(1);
+    const stopping = store.stop();
+    store.reset();
+    finish();
+    await stopping;
+    expect(store.latestRun).toBeNull();
+    expect(store.isStopping).toBe(false);
+    expect(getConversation).toHaveBeenCalledTimes(1);
+    store.$dispose();
+  });
 
   it('refreshes a restored active run and unlocks the chat after interruption', async () => {
     vi.mocked(getConversation).mockResolvedValueOnce(detail('running')).mockResolvedValue(detail('interrupted'));

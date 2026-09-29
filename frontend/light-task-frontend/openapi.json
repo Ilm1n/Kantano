@@ -2074,6 +2074,66 @@
         }
       }
     },
+    "/api/projects/{project_id}/assistant/conversations/{conversation_id}/runs/{run_id}/stop": {
+      "post": {
+        "tags": [
+          "Assistant"
+        ],
+        "summary": "Stop Run",
+        "operationId": "stop_run_api_projects__project_id__assistant_conversations__conversation_id__runs__run_id__stop_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "conversation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Conversation Id"
+            }
+          },
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/projects/{project_id}/tags": {
       "get": {
         "tags": [
@@ -2764,7 +2824,8 @@
               "completed",
               "rejected",
               "failed",
-              "skipped"
+              "skipped",
+              "cancelled"
             ],
             "title": "Status",
             "default": "completed"
@@ -3790,7 +3851,8 @@
               "rejected",
               "failed",
               "interrupted",
-              "unknown"
+              "unknown",
+              "cancelled"
             ],
             "title": "Status"
           },
@@ -3823,6 +3885,11 @@
           "fallbackUsed": {
             "type": "boolean",
             "title": "Fallbackused"
+          },
+          "stopRequested": {
+            "type": "boolean",
+            "title": "Stoprequested",
+            "default": false
           },
           "proposedAction": {
             "anyOf": [

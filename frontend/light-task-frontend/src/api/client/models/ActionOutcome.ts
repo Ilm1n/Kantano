@@ -22,5 +22,6 @@ export namespace ActionOutcome {
         REJECTED = 'rejected',
         FAILED = 'failed',
         SKIPPED = 'skipped',
+        CANCELLED = 'cancelled',
     }
 }

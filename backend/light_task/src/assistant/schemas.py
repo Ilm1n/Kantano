@@ -95,6 +95,7 @@ class RunRead(BaseSchema):
     model: str | None
     step_count: int
     fallback_used: bool
+    stop_requested: bool = False
     proposed_action: ProposedAction | None
     result: RunResult | None
     created_at: datetime

@@ -7,6 +7,7 @@ import {
   deleteConversation,
   getConversation,
   listConversations,
+  stopRun,
   streamAssistant,
   type AssistantMessage,
   type AssistantRun,
@@ -26,6 +27,7 @@ export const useAssistantStore = defineStore('assistant', () => {
   const latestRun = ref<AssistantRun | null>(null);
   const streamedText = ref('');
   const isStreaming = ref(false);
+  const isStopping = ref(false);
   const isLoading = ref(false);
   const error = ref('');
   let contextVersion = 0;
@@ -40,6 +42,11 @@ export const useAssistantStore = defineStore('assistant', () => {
   });
   const isPending = computed(() => latestRun.value?.status === 'pending');
   const isBusy = computed(() => ['running', 'executing'].includes(latestRun.value?.status ?? ''));
+  const canStop = computed(() => isBusy.value && !!conversationId.value);
+
+  watch([latestRun, isBusy], () => {
+    isStopping.value = isBusy.value && !!latestRun.value?.stopRequested;
+  }, { deep: true });
 
   watch([isOpen, projectId, conversationId, isBusy, isStreaming], (_, __, onCleanup) => {
     if (!isOpen.value || !isBusy.value || isStreaming.value
@@ -214,8 +221,8 @@ export const useAssistantStore = defineStore('assistant', () => {
     } else if (event.type === 'done') {
       if (latestRun.value) {
         latestRun.value.status = event.data.status;
-        latestRun.value.provider = event.data.provider;
-        latestRun.value.model = event.data.model;
+        if (event.data.provider !== undefined) latestRun.value.provider = event.data.provider;
+        if (event.data.model !== undefined) latestRun.value.model = event.data.model;
       }
     } else if (event.type === 'error') {
       error.value = event.data.message;
@@ -240,6 +247,7 @@ export const useAssistantStore = defineStore('assistant', () => {
       createdAt: new Date().toISOString(),
     });
     isStreaming.value = true;
+    latestRun.value = null;
     streamedText.value = '';
     error.value = '';
     try {
@@ -257,6 +265,28 @@ export const useAssistantStore = defineStore('assistant', () => {
         isStreaming.value = false;
         streamController = null;
       }
+    }
+  }
+
+  async function stop() {
+    if (!canStop.value || isStopping.value || projectId.value === null || !conversationId.value || !latestRun.value) return;
+    const currentProjectId = projectId.value;
+    const currentChatId = conversationId.value;
+    const runId = latestRun.value.id;
+    const version = contextVersion;
+    isStopping.value = true;
+    try {
+      await stopRun(currentProjectId, currentChatId, runId);
+      if (version !== contextVersion) return;
+      if (latestRun.value?.id === runId && isBusy.value) latestRun.value.stopRequested = true;
+      // Keep SSE open until the server finishes an already started mutation.
+      if (!isStreaming.value || isPending.value) {
+        await selectConversationAfterStream(currentProjectId, currentChatId, version);
+      }
+    } catch (cause) {
+      if (version !== contextVersion) return;
+      isStopping.value = false;
+      error.value = getErrorMessage(cause);
     }
   }
 
@@ -314,6 +344,7 @@ export const useAssistantStore = defineStore('assistant', () => {
     streamController?.abort();
     streamController = null;
     isStreaming.value = false;
+    isStopping.value = false;
     isLoading.value = false;
     isOpen.value = false;
     projectId.value = null;
@@ -330,8 +361,8 @@ export const useAssistantStore = defineStore('assistant', () => {
   return {
     isOpen, projectId, conversationId, projects: computed(() => projectsStore.projects),
     project, conversation, conversations, messages, latestRun, streamedText,
-    isStreaming, isLoading, isPending, isBusy, error, draft,
+    isStreaming, isStopping, canStop, isLoading, isPending, isBusy, error, draft,
     openFromMenu, openFromBoard, selectProject, selectConversation,
-    createChat, removeChat, send, decide, reset,
+    createChat, removeChat, send, stop, decide, reset,
   };
 });

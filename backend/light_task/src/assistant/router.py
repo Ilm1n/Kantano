@@ -12,6 +12,7 @@ from src.assistant.dependencies import (
     get_delete_conversation_use_case,
     get_list_conversations_use_case,
     get_start_run_use_case,
+    get_stop_run_use_case,
     require_enabled,
 )
 from src.assistant.dto import (
@@ -20,6 +21,7 @@ from src.assistant.dto import (
     DecideActionCommand,
     ProjectScope,
     StartRunCommand,
+    StopRunCommand,
 )
 from src.assistant.responses import AssistantStreamingResponse, encode_events
 from src.assistant.runtime import AssistantRuntime
@@ -37,6 +39,7 @@ from src.assistant.use_cases import (
     GetConversationUseCase,
     ListConversationsUseCase,
     StartRunUseCase,
+    StopRunUseCase,
 )
 from src.auth.dependencies import get_current_user
 from src.auth.schemas import UserPayload
@@ -162,4 +165,21 @@ async def decide_action(
     )
     return AssistantStreamingResponse(
         encode_events(runtime.stream(execution)), execution.run_id, runtime.interrupt
+    )
+
+
+@router.post(
+    "/conversations/{conversation_id}/runs/{run_id}/stop", status_code=status.HTTP_204_NO_CONTENT
+)
+async def stop_run(
+    project_id: int,
+    conversation_id: UUID,
+    run_id: UUID,
+    user: User,
+    use_case: Annotated[StopRunUseCase, Depends(get_stop_run_use_case)],
+) -> None:
+    await use_case.execute(
+        StopRunCommand(
+            project_id=project_id, user_id=user.sub, conversation_id=conversation_id, run_id=run_id
+        )
     )

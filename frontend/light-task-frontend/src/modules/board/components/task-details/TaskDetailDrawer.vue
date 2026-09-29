@@ -12,7 +12,7 @@ import { useRealtimeStore } from "@/modules/realtime/store/realtime.store";
 import { useAssistantStore } from "@/modules/assistant/store/assistant.store";
 
 // UI Components
-import Drawer from "primevue/drawer";
+import TaskDetailsPanel from "./TaskDetailsPanel.vue";
 import InputText from "primevue/inputtext";
 import Textarea from "primevue/textarea";
 import Skeleton from "primevue/skeleton";
@@ -411,26 +411,9 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <Drawer
+  <TaskDetailsPanel
     v-model:visible="isVisible"
-    position="right"
-    :modal="!besideAssistant"
-    :style="besideAssistant ? { right: '420px' } : undefined"
-    class="!w-full md:!w-[700px] !bg-white dark:!bg-dark-surface !border-l dark:!border-dark-border !transition-colors !duration-100"
-    :pt="{
-      mask: { class: 'backdrop-blur-[1px]' },
-      header: {
-        class:
-          '!bg-white dark:!bg-dark-surface !border-b !border-gray-200 dark:!border-dark-border !p-5',
-      },
-      content: {
-        class:
-          '!bg-white dark:!bg-dark-surface !p-6 !overflow-hidden flex flex-col',
-      },
-      closeButton: {
-        class: 'hover:!bg-gray-100 dark:hover:!bg-slate-800 !text-slate-500',
-      },
-    }"
+    :beside-assistant="besideAssistant"
     @hide="onClose"
   >
     <template #header>
@@ -439,7 +422,7 @@ onUnmounted(() => {
           <i class="pi pi-check-square text-primary-600"></i>
         </div>
         <span class="font-bold text-slate-800 dark:text-white text-base">
-          Детали задачи #{{ store.selectedTask?.id }}
+          Детали задачи
         </span>
       </div>
     </template>
@@ -595,7 +578,7 @@ onUnmounted(() => {
         </div>
       </div>
     </template>
-  </Drawer>
+  </TaskDetailsPanel>
 </template>
 
 <style scoped>
