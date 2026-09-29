@@ -375,6 +375,10 @@ migrations workflow ждёт readiness, проверяет telemetry endpoints �
 Grafana folder, datasources, dashboards, alerts, Telegram contact point и notification
 policy. При ошибке запуска используется предыдущий image tag.
 
+Grafana provisioning выполняется в job `configure-monitoring` после `deploy`.
+Ошибка provisioning не меняет статус `deploy`, но завершает workflow с ошибкой.
+Для HTTP 502/503/504, сетевых ошибок и таймаутов — до 5 попыток с интервалом 15 секунд.
+
 Grafana resources применяются скриптом `observability/grafana/apply.py` через HTTP API:
 
 ```bash

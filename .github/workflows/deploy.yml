@@ -286,10 +286,6 @@ jobs:
             retry 10 5 sh -c 'curl -fsS http://127.0.0.1:12345/metrics | grep -q alloy_build_info'
             docker compose -f docker-compose.prod.yml exec -T rabbitmq rabbitmq-diagnostics -q ping
 
-            docker run --rm --env-file .env.grafana \
-              -v "$(pwd)/observability/grafana:/work:ro" \
-              python:3.12-alpine python /work/apply.py
-
             docker compose -f docker-compose.prod.yml logs --since=5m backend celery-worker outbox-publisher alloy | \
               tee /tmp/kantano-observability-deploy.log
             if grep -Eiq 'traceback|unhandled exception|fatal|panic|exporting failed|dropping data|dropped_items' /tmp/kantano-observability-deploy.log; then
@@ -336,6 +332,25 @@ jobs:
 
             docker image prune -af --filter "until=24h"
             retry 5 15 docker pull restic/restic:0.19.1
+
+  configure-monitoring:
+    name: Configure Monitoring
+    needs: deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Apply Grafana dashboards and alerts via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_KEY }}
+          passphrase: ${{ secrets.VPS_PASSPHRASE }}
+          script: |
+            set -e
+            cd ~/app
+            docker run --rm --env-file .env.grafana \
+              -v "$(pwd)/observability/grafana:/work:ro" \
+              python:3.12-alpine python /work/apply.py
 
   cleanup:
     name: Cleanup Registry
