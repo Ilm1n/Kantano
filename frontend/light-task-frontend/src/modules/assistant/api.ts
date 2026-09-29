@@ -19,6 +19,13 @@ export type AssistantMessage = {
   createdAt: string;
 };
 
+export type ActionStep = {
+  id: string;
+  tool: string;
+  args: Record<string, unknown>;
+  display?: Record<string, unknown>;
+};
+
 export type AssistantRun = {
   id: string;
   status: string;
@@ -26,7 +33,7 @@ export type AssistantRun = {
   model: string | null;
   stepCount: number;
   fallbackUsed: boolean;
-  proposedAction: { name: string; args: Record<string, unknown>; action_id?: string; tool_call_id?: string } | null;
+  proposedAction: { name: string; args: Record<string, unknown>; display?: Record<string, unknown> & { steps?: ActionStep[] }; action_id?: string; tool_call_id?: string } | null;
   result: Record<string, unknown> | null;
 };
 

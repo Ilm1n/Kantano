@@ -1,3 +1,4 @@
+# ruff: noqa: RUF001
 from __future__ import annotations
 
 from datetime import datetime
@@ -6,6 +7,7 @@ from typing import Any
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, select
 
+from src.assistant.plans import ID_FIELDS, REFERENCE, ExecutePlan, validate_plan
 from src.boards.constants import TaskPriority
 from src.boards.dto import (
     CreateColumnCommand,
@@ -166,6 +168,7 @@ TOOL_SCHEMAS: list[type[BaseModel]] = [
     UpdateTag,
     AddTagToTask,
     RemoveTagFromTask,
+    ExecutePlan,
 ]
 WRITE_TOOLS = {
     "CreateTask",
@@ -194,6 +197,8 @@ def normalize_priority(value: Any) -> Any:
 
 
 def validate_write(name: str, args: dict[str, Any]) -> dict[str, Any]:
+    if name == "ExecutePlan":
+        return validate_plan(args, validate_write)
     schema = next(schema for schema in TOOL_SCHEMAS if schema.__name__ == name)
     return schema.model_validate(args).model_dump(mode="json", exclude_unset=True)
 
@@ -308,6 +313,89 @@ class AssistantTools:
                 }
             raise ValueError("Unknown read tool")
 
+    async def describe_action(self, name: str, args: dict[str, Any]) -> dict[str, Any]:
+        if name == "ExecutePlan":
+            steps = []
+            planned: dict[str, str] = {}
+            for step in args["steps"]:
+                fields = dict(step["args"])
+                deferred: dict[str, Any] = {}
+                for field in ID_FIELDS:
+                    value = fields.get(field)
+                    items = value if isinstance(value, list) else [value]
+                    if any(isinstance(item, str) and REFERENCE.fullmatch(item) for item in items):
+                        deferred[field] = value
+                        fields.pop(field)
+                display = await self.describe_action(step["tool"], fields)
+                for field, value in deferred.items():
+                    items = value if isinstance(value, list) else [value]
+                    labels = []
+                    for item in items:
+                        match = REFERENCE.fullmatch(item) if isinstance(item, str) else None
+                        if match:
+                            labels.append(planned[match[1]])
+                        else:
+                            resolved = await self.describe_action(
+                                step["tool"], {field: [item] if isinstance(value, list) else item}
+                            )
+                            label = resolved[field]
+                            labels.extend(label if isinstance(label, list) else [label])
+                    display[field] = labels if isinstance(value, list) else labels[0]
+                steps.append({**step, "display": display})
+                planned[step["id"]] = (
+                    step["args"].get("title") or step["args"].get("name") or "Новый объект"
+                )
+            return {"steps": steps}
+        display: dict[str, Any] = {}
+        async with db_helper.async_session_maker() as session:
+            repository = BoardRepository(session)
+            if not await repository.project_member_exists(
+                project_id=self.project_id, user_id=self.user_id
+            ):
+                raise ValueError("Project access is no longer available")
+            for field, model, title in (
+                ("task_id", Task, Task.title),
+                ("column_id", BoardColumn, BoardColumn.name),
+                ("new_column_id", BoardColumn, BoardColumn.name),
+                ("before_column_id", BoardColumn, BoardColumn.name),
+                ("tag_id", Tag, Tag.name),
+            ):
+                value = args.get(field)
+                if value is not None:
+                    label = await session.scalar(
+                        select(title).where(model.id == value, model.project_id == self.project_id)
+                    )
+                    display[field] = label or "Не найдено в проекте"
+            if args.get("assignee_id") is not None:
+                member = (
+                    await session.execute(
+                        select(User.username, User.full_name)
+                        .join(ProjectMember, ProjectMember.user_id == User.id)
+                        .where(
+                            ProjectMember.project_id == self.project_id,
+                            User.id == args["assignee_id"],
+                        )
+                    )
+                ).first()
+                display["assignee_id"] = (
+                    (member.full_name or member.username) if member else "Не найден в проекте"
+                )
+            if args.get("tag_ids"):
+                tags = {
+                    tag_id: name
+                    for tag_id, name in (
+                        await session.execute(
+                            select(Tag.id, Tag.name).where(
+                                Tag.project_id == self.project_id, Tag.id.in_(args["tag_ids"])
+                            )
+                        )
+                    ).all()
+                }
+                display["tag_ids"] = [
+                    tags.get(tag_id, "Не найден в проекте") for tag_id in args["tag_ids"]
+                ]
+        return display
+
     async def execute_write(self, name: str, args: dict[str, Any]) -> dict[str, Any]:
         # The API must atomically claim pending -> executing before calling here.
         if name == "CreateColumn":
@@ -322,7 +410,7 @@ class AssistantTools:
                     tasks_limit=None,
                 )
             )
-            return {"column_id": column.id, "kind": "column_created"}
+            return {"column_id": column.id, "name": column.name, "kind": "column_created"}
 
         if name == "RenameColumn":
             data = RenameColumn.model_validate(args)
@@ -336,7 +424,7 @@ class AssistantTools:
                     changes={"name": data.new_name},
                 )
             )
-            return {"column_id": column.id, "kind": "column_renamed"}
+            return {"column_id": column.id, "name": column.name, "kind": "column_renamed"}
 
         if name == "MoveColumn":
             data = MoveColumn.model_validate(args)
@@ -368,7 +456,12 @@ class AssistantTools:
                     column_ids=column_ids,
                 )
             )
-            return {"column_id": data.column_id, "kind": "column_moved"}
+            display = await self.describe_action(name, args)
+            return {
+                "column_id": data.column_id,
+                "name": display["column_id"],
+                "kind": "column_moved",
+            }
 
         if name == "CreateTag":
             data = CreateTag.model_validate(args)
@@ -382,7 +475,7 @@ class AssistantTools:
                     color=data.color,
                 )
             )
-            return {"tag_id": tag.id, "kind": "tag_created"}
+            return {"tag_id": tag.id, "name": tag.name, "kind": "tag_created"}
 
         if name == "UpdateTag":
             data = UpdateTag.model_validate(args)
@@ -402,7 +495,7 @@ class AssistantTools:
                     changes=changes,
                 )
             )
-            return {"tag_id": tag.id, "kind": "tag_updated"}
+            return {"tag_id": tag.id, "name": tag.name, "kind": "tag_updated"}
 
         if name == "CreateTask":
             data = CreateTask.model_validate(args)
@@ -425,7 +518,7 @@ class AssistantTools:
                     tag_ids=data.tag_ids,
                 )
             )
-            return {"task_id": result.id, "kind": "created"}
+            return {"task_id": result.id, "title": result.title, "kind": "created"}
 
         if name in {"UpdateTask", "MoveTask", "AddTagToTask", "RemoveTagFromTask"}:
             task_id = int(args["task_id"])
@@ -451,7 +544,7 @@ class AssistantTools:
                     tag_ids=tag_ids,
                 )
             )
-            return {"task_id": result.id, "kind": "updated"}
+            return {"task_id": result.id, "title": result.title, "kind": "updated"}
         if name == "MoveTask":
             data = MoveTask.model_validate(args)
             async with db_helper.async_session_maker() as session:
@@ -467,7 +560,7 @@ class AssistantTools:
                     new_column_id=data.new_column_id,
                 )
             )
-            return {"task_id": result.id, "kind": "moved"}
+            return {"task_id": result.id, "title": result.title, "kind": "moved"}
         if name in {"AddTagToTask", "RemoveTagFromTask"}:
             data = (AddTagToTask if name == "AddTagToTask" else RemoveTagFromTask).model_validate(
                 args
@@ -485,6 +578,7 @@ class AssistantTools:
             )
             return {
                 "task_id": result.id,
+                "title": result.title,
                 "tag_id": data.tag_id,
                 "kind": "tag_added_to_task" if name == "AddTagToTask" else "tag_removed_from_task",
             }

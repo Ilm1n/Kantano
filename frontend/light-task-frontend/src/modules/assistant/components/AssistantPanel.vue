@@ -3,6 +3,7 @@ import { computed } from 'vue';
 import { useConfirm } from 'primevue/useconfirm';
 import MarkdownIt from 'markdown-it';
 import { useAssistantStore } from '../store/assistant.store';
+import { actionFields } from '../presentation';
 
 const store = useAssistantStore();
 const confirm = useConfirm();
@@ -21,26 +22,12 @@ const actionNames: Record<string, string> = {
   AddTagToTask: 'Добавить тег задаче',
   RemoveTagFromTask: 'Убрать тег с задачи',
 };
-const fieldNames: Record<string, string> = {
-  title: 'Название', description: 'Описание', task_id: 'Задача #',
-  column_id: 'Колонка #', new_column_id: 'Новая колонка #',
-  priority: 'Приоритет', assignee_id: 'Исполнитель #',
-  deadline_at: 'Срок', tag_ids: 'Метки',
-  name: 'Название', new_name: 'Новое название',
-  before_column_id: 'Перед колонкой #',
-  tag_id: 'Тег #', color: 'Цвет',
-};
 const action = computed(() => store.latestRun?.proposedAction);
-const priorityLabels: Record<string, string> = {
-  LOW: 'Низкий', MEDIUM: 'Средний', HIGH: 'Высокий', CRITICAL: 'Критический',
-};
-const actionFields = computed(() => Object.entries(action.value?.args ?? {})
-  .filter(([key]) => key !== 'tool_call_id')
-  .map(([key, value]) => ({
-    label: fieldNames[key] ?? key,
-    value: key === 'priority' ? priorityLabels[String(value)] ?? String(value ?? '—')
-      : Array.isArray(value) ? value.join(', ') : String(value ?? '—'),
-  })));
+const actionSteps = computed(() => {
+  if (!action.value) return [];
+  if (action.value.name === 'ExecutePlan') return action.value.display?.steps ?? [];
+  return [{ id: 'single', tool: action.value.name, args: action.value.args, display: action.value.display }];
+});
 const canSend = computed(() => Boolean(store.draft.trim()) && !store.isLoading && !store.isStreaming && !store.isPending && !store.isBusy);
 
 function onComposerKeydown(event: KeyboardEvent) {
@@ -144,7 +131,7 @@ function confirmDeleteChat() {
               :key="reference.id"
               :to="{ name: 'project-board', params: { projectId: store.projectId }, query: { taskId: reference.id } }"
               class="rounded-md bg-white px-2 py-0.5 text-xs font-semibold text-primary-700 hover:underline dark:bg-slate-700 dark:text-primary-300"
-            >#{{ reference.id }} {{ reference.title }}</router-link>
+            >{{ reference.title || 'Открыть задачу' }}</router-link>
           </div>
         </div>
       </div>
@@ -155,15 +142,20 @@ function confirmDeleteChat() {
       </div>
 
       <div v-if="store.isPending && action" class="rounded-xl border border-amber-300 bg-amber-50 p-4 dark:border-amber-700 dark:bg-amber-950/30">
-        <p class="text-sm font-bold text-amber-900 dark:text-amber-200">Подтвердить действие</p>
-        <p class="mt-1 text-sm text-amber-900 dark:text-amber-200">{{ actionNames[action.name] ?? action.name }}</p>
-        <dl class="mt-3 space-y-1 text-xs text-amber-950 dark:text-amber-100">
-          <div v-for="field in actionFields" :key="field.label" class="flex gap-2">
-            <dt class="min-w-24 font-semibold">{{ field.label }}</dt><dd class="break-all">{{ field.value }}</dd>
-          </div>
-        </dl>
+        <p class="text-sm font-bold text-amber-900 dark:text-amber-200">{{ action.name === 'ExecutePlan' ? 'Подтвердить план' : 'Подтвердить действие' }}</p>
+        <p v-if="action.name === 'ExecutePlan'" class="mt-1 text-xs leading-5 text-amber-800 dark:text-amber-200">Шагов: {{ actionSteps.length }}. Выполним по порядку. При ошибке остановимся; выполненные изменения сохранятся.</p>
+        <ol class="mt-3 space-y-4">
+          <li v-for="(step, index) in actionSteps" :key="step.id" class="border-t border-amber-200 pt-3 dark:border-amber-800">
+            <p class="text-sm font-semibold text-amber-900 dark:text-amber-200">{{ action.name === 'ExecutePlan' ? `${index + 1}. ` : '' }}{{ actionNames[step.tool] ?? step.tool }}</p>
+            <dl class="mt-2 space-y-1 text-xs text-amber-950 dark:text-amber-100">
+              <div v-for="field in actionFields(step.args, step.display)" :key="field.key" class="flex gap-2">
+                <dt class="w-24 shrink-0 font-semibold">{{ field.label }}</dt><dd class="min-w-0 whitespace-pre-wrap break-words"><span v-if="field.key === 'color'" class="mr-1 inline-block h-3 w-3 rounded border border-black/10 align-middle" :style="{ backgroundColor: field.value }"></span>{{ field.value }}</dd>
+              </div>
+            </dl>
+          </li>
+        </ol>
         <div class="mt-4 flex gap-2">
-          <button type="button" :disabled="store.isStreaming" class="rounded-lg bg-primary-600 px-3 py-2 text-xs font-bold text-white disabled:opacity-50" @click="store.decide(true)">Подтвердить</button>
+          <button type="button" :disabled="store.isStreaming" class="rounded-lg bg-primary-600 px-3 py-2 text-xs font-bold text-white disabled:opacity-50" @click="store.decide(true)">{{ action.name === 'ExecutePlan' ? 'Выполнить план' : 'Подтвердить' }}</button>
           <button type="button" :disabled="store.isStreaming" class="rounded-lg border border-amber-300 px-3 py-2 text-xs font-semibold text-amber-900 disabled:opacity-50 dark:text-amber-200" @click="store.decide(false)">Отклонить</button>
         </div>
       </div>
@@ -171,7 +163,7 @@ function confirmDeleteChat() {
     </div>
 
     <footer class="shrink-0 border-t border-slate-200 p-4 dark:border-dark-border">
-      <p v-if="store.isPending" class="mb-2 text-xs text-amber-700 dark:text-amber-300">Сначала подтвердите или отклоните действие.</p>
+      <p v-if="store.isPending" class="mb-2 text-xs text-amber-700 dark:text-amber-300">Сначала подтвердите или отклоните {{ action?.name === 'ExecutePlan' ? 'план' : 'действие' }}.</p>
       <p v-if="store.isBusy && !store.isStreaming" class="mb-2 text-xs text-slate-500">Проверяем состояние запроса…</p>
       <p v-if="store.latestRun?.status === 'interrupted'" class="mb-2 text-xs text-slate-500">Запрос прерван. Можно отправить новое сообщение.</p>
       <p v-if="store.latestRun?.status === 'unknown'" class="mb-2 text-xs text-amber-700 dark:text-amber-300">Исход изменения неизвестен. Проверьте доску перед новой попыткой.</p>

@@ -6,14 +6,14 @@ import logging
 from collections.abc import AsyncGenerator
 from time import perf_counter
 from typing import Annotated, Any
-from uuid import UUID
+from uuid import UUID, uuid5
 
 import anyio
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage
 from langgraph.types import Command
-from sqlalchemy import case, update
+from sqlalchemy import case, select, update
 from starlette.types import Receive, Scope, Send
 
 from src.assistant.checkpoints import open_checkpointer
@@ -32,6 +32,7 @@ from src.assistant.schemas import (
 from src.assistant.tools import AssistantTools
 from src.auth.dependencies import get_current_user
 from src.auth.schemas import UserPayload
+from src.boards.models import Task
 from src.config import settings
 from src.db.database import db_helper
 from src.db.unit_of_work import UnitOfWork
@@ -127,6 +128,7 @@ async def create_conversation(
 async def get_conversation(
     project_id: int,
     conversation_id: UUID,
+    request: Request,
     user: Annotated[UserPayload, Depends(get_current_user)],
 ) -> ChatDetail:
     conversation = await authorized_chat(project_id, user.sub, conversation_id)
@@ -134,10 +136,53 @@ async def get_conversation(
         repository = AssistantRepository(session)
         messages = await repository.list_messages(conversation_id)
         latest_run = await repository.latest_run(conversation_id)
+        message_reads = [MessageRead.model_validate(message) for message in messages]
+        task_ids = {
+            ref["id"]
+            for message in message_reads
+            for ref in message.references
+            if ref.get("type") == "task"
+        }
+        titles: dict[int, str] = (
+            {
+                task_id: title
+                for task_id, title in (
+                    await session.execute(
+                        select(Task.id, Task.title).where(
+                            Task.project_id == project_id, Task.id.in_(task_ids)
+                        )
+                    )
+                ).all()
+            }
+            if task_ids
+            else {}
+        )
+        for message in message_reads:
+            message.references = [
+                {**ref, "title": titles.get(ref["id"], ref.get("title"))}
+                if ref.get("type") == "task"
+                else ref
+                for ref in message.references
+            ]
+        run_read = RunRead.model_validate(latest_run) if latest_run else None
+        if (
+            run_read
+            and run_read.status == "pending"
+            and run_read.proposed_action
+            and "display" not in run_read.proposed_action
+        ):
+            tools = AssistantTools(
+                project_id, user.sub, get_event_publisher(request), get_project_read_cache(request)
+            )
+            proposal = run_read.proposed_action
+            run_read.proposed_action = {
+                **proposal,
+                "display": await tools.describe_action(proposal["name"], proposal["args"]),
+            }
         return ChatDetail(
             conversation=ConversationRead.model_validate(conversation),
-            messages=[MessageRead.model_validate(message) for message in messages],
-            latest_run=RunRead.model_validate(latest_run) if latest_run else None,
+            messages=message_reads,
+            latest_run=run_read,
         )
 
 
@@ -227,19 +272,46 @@ def action_summary(outcome: dict[str, Any]) -> str:
         return "Действие отклонено."
     if outcome["status"] == "failed":
         return outcome.get("error", "Действие не выполнено.")
+    if outcome["status"] == "skipped":
+        return "Шаг пропущен после ошибки."
+    title = f"«{outcome['title']}»" if outcome.get("title") else ""
+    name = f"«{outcome['name']}»" if outcome.get("name") else ""
     labels = {
-        "created": f"Задача #{outcome.get('task_id')} создана.",
-        "updated": f"Задача #{outcome.get('task_id')} изменена.",
-        "moved": f"Задача #{outcome.get('task_id')} перемещена.",
-        "column_created": f"Колонка #{outcome.get('column_id')} создана.",
-        "column_renamed": f"Колонка #{outcome.get('column_id')} переименована.",
-        "column_moved": f"Колонка #{outcome.get('column_id')} перемещена.",
-        "tag_created": f"Тег #{outcome.get('tag_id')} создан.",
-        "tag_updated": f"Тег #{outcome.get('tag_id')} изменён.",
-        "tag_added_to_task": f"Тег добавлен к задаче #{outcome.get('task_id')}.",
-        "tag_removed_from_task": f"Тег снят с задачи #{outcome.get('task_id')}.",
+        "created": f"Создана задача {title}.",
+        "updated": f"Изменена задача {title}.",
+        "moved": f"Перемещена задача {title}.",
+        "column_created": f"Создана колонка {name}.",
+        "column_renamed": f"Переименована колонка {name}.",
+        "column_moved": f"Перемещена колонка {name}.",
+        "tag_created": f"Создан тег {name}.",
+        "tag_updated": f"Изменён тег {name}.",
+        "tag_added_to_task": f"Тег добавлен к задаче {title}.",
+        "tag_removed_from_task": f"Тег снят с задачи {title}.",
     }
     return labels.get(outcome.get("kind", ""), "Действие выполнено.")
+
+
+def action_references(outcomes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return list(
+        {
+            outcome["task_id"]: {
+                "type": "task",
+                "id": outcome["task_id"],
+                "title": outcome.get("title"),
+            }
+            for outcome in outcomes
+            if outcome.get("task_id") and outcome["status"] == "completed"
+        }.values()
+    )
+
+
+def results_summary(outcomes: list[dict[str, Any]]) -> str:
+    if len(outcomes) == 1:
+        return action_summary(outcomes[0])
+    completed = sum(outcome["status"] == "completed" for outcome in outcomes)
+    return f"Выполнено действий: {completed}.\n\n" + "\n".join(
+        f"- {action_summary(outcome)}" for outcome in outcomes
+    )
 
 
 async def fail_run(run_id: UUID, conversation_id: UUID) -> str:
@@ -287,7 +359,9 @@ async def stream_graph(
     tools = AssistantTools(project_id, user_id, publisher, cache)
     config = {"configurable": {"thread_id": str(run_id)}, "recursion_limit": 100}
 
-    async def record_action_result(outcomes: list[dict[str, Any]]) -> None:
+    results_message_id = uuid5(run_id, "action-results")
+
+    async def record_action_result(outcomes: list[dict[str, Any]], executing: bool) -> None:
         # Save a known mutation result before any further LLM call or checkpoint write.
         with anyio.fail_after(10, shield=True):
             async with UnitOfWork() as uow:
@@ -295,23 +369,22 @@ async def stream_graph(
                 if session is None:
                     raise RuntimeError("UnitOfWork has not been entered")
                 outcome = outcomes[-1]
-                references = (
-                    [{"type": "task", "id": outcome["task_id"]}]
-                    if outcome.get("task_id") and outcome["status"] == "completed"
-                    else []
-                )
-                session.add(
-                    AssistantMessage(
-                        conversation_id=conversation_id,
-                        role="assistant",
-                        content=action_summary(outcome),
-                        references=references,
+                message = await session.get(AssistantMessage, results_message_id)
+                if message is None:
+                    message = AssistantMessage(
+                        id=results_message_id, conversation_id=conversation_id, role="assistant"
                     )
-                )
+                    session.add(message)
+                message.content = results_summary(outcomes)
+                message.references = action_references(outcomes)
                 await session.execute(
                     update(AssistantRun)
                     .where(AssistantRun.id == run_id)
-                    .values(status="running", proposed_action=None, result={"actions": outcomes})
+                    .values(
+                        status="executing" if executing else "running",
+                        proposed_action=None,
+                        result={"actions": outcomes},
+                    )
                 )
         logger.info(
             "assistant_action run_id=%s conversation_id=%s tool=%s result=%s",
@@ -376,20 +449,27 @@ async def stream_graph(
                 final_status = "completed"
                 if outcomes and all(outcome["status"] == "rejected" for outcome in outcomes):
                     final_status = "rejected"
-                elif outcomes and all(outcome["status"] == "failed" for outcome in outcomes):
+                elif any(outcome["status"] in {"failed", "skipped"} for outcome in outcomes):
                     final_status = "failed"
                 async with UnitOfWork() as uow:
                     session = uow.session
                     if session is None:
                         raise RuntimeError("UnitOfWork has not been entered")
-                    session.add(
-                        AssistantMessage(
-                            conversation_id=conversation_id,
-                            role="assistant",
-                            content=content,
-                            references=state.get("references", []),
-                        )
+                    message = (
+                        await session.get(AssistantMessage, results_message_id)
+                        if outcomes
+                        else None
                     )
+                    if message is None:
+                        message = AssistantMessage(
+                            conversation_id=conversation_id, role="assistant"
+                        )
+                        session.add(message)
+                    message.content = content or results_summary(outcomes)
+                    references = [*state.get("references", []), *action_references(outcomes)]
+                    message.references = list(
+                        {(ref["type"], ref["id"]): ref for ref in references}.values()
+                    )[:30]
                     await session.execute(
                         update(AssistantRun)
                         .where(AssistantRun.id == run_id)
