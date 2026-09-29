@@ -11,7 +11,7 @@ from pydantic import ValidationError
 
 from src.assistant import graph as graph_module
 from src.assistant.provider import ModelAnswer
-from src.assistant.tools import CreateTask, UpdateTask, validate_write
+from src.assistant.tool_schemas import CreateTask, UpdateTask, validate_write
 from src.errors import ErrorCode
 from src.shared.errors import BadRequestError
 

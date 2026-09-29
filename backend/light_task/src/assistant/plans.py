@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable
-from typing import Any, Literal
+from typing import Any
 
 from pydantic import BaseModel, Field
+
+from src.assistant.contracts import WriteToolName
 
 MAX_ACTIONS = 10
 REFERENCE = re.compile(r"^\$([a-zA-Z][a-zA-Z0-9_-]*)\.(task_id|column_id|tag_id)$")
@@ -21,18 +23,7 @@ ID_FIELDS = {
 
 class PlanStep(BaseModel):
     id: str = Field(pattern=r"^[a-zA-Z][a-zA-Z0-9_-]*$", max_length=40)
-    tool: Literal[
-        "CreateTask",
-        "UpdateTask",
-        "MoveTask",
-        "CreateColumn",
-        "RenameColumn",
-        "MoveColumn",
-        "CreateTag",
-        "UpdateTag",
-        "AddTagToTask",
-        "RemoveTagFromTask",
-    ]
+    tool: WriteToolName
     args: dict[str, Any] = Field(
         description="Arguments of this write tool. Existing IDs are integers. To use an entity created by an earlier step, use $step_id.column_id, $step_id.task_id or $step_id.tag_id in the corresponding ID field (also inside tag_ids)."
     )

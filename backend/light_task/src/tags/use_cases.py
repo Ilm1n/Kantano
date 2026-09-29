@@ -150,6 +150,9 @@ class UpdateTagUseCase:
                 if tag is None:
                     raise NotFoundError(ErrorCode.TAG_NOT_FOUND)
 
+                if command.project_id is not None and tag.project_id != command.project_id:
+                    raise NotFoundError(ErrorCode.TAG_NOT_FOUND)
+
                 member = await repository.get_project_member(
                     project_id=tag.project_id,
                     user_id=command.actor_user_id,

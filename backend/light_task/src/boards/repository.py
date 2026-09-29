@@ -26,6 +26,20 @@ class BoardRepository:
         )
         return list((await self.session.execute(stmt)).scalars().all())
 
+    async def lock_project(self, project_id: int) -> None:
+        await self.session.scalar(
+            select(Project.id).where(Project.id == project_id).with_for_update()
+        )
+
+    async def list_columns_for_update(self, project_id: int) -> list[BoardColumn]:
+        statement = (
+            select(BoardColumn)
+            .where(BoardColumn.project_id == project_id)
+            .order_by(BoardColumn.position, BoardColumn.id)
+            .with_for_update()
+        )
+        return list((await self.session.scalars(statement)).all())
+
     async def list_project_tasks(
         self,
         *,

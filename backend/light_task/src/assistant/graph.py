@@ -8,14 +8,17 @@ from typing import Annotated, Any, NotRequired
 from uuid import uuid4
 
 from langchain_core.messages import AIMessage, BaseMessage, SystemMessage, ToolMessage
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph, add_messages
+from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import interrupt
 from pydantic import ValidationError
 from typing_extensions import TypedDict
 
 from src.assistant.plans import ID_FIELDS, MAX_ACTIONS, resolve_step
 from src.assistant.provider import call_model
-from src.assistant.tools import TOOL_SCHEMAS, WRITE_TOOLS, AssistantTools, validate_write
+from src.assistant.tool_schemas import TOOL_SCHEMAS, WRITE_TOOLS, validate_write
+from src.assistant.tools import AssistantTools
 from src.errors import ErrorCode
 from src.shared.errors import AppError
 
@@ -76,10 +79,10 @@ class AssistantState(TypedDict):
 
 
 def build_graph(
-    checkpointer: Any,
+    checkpointer: BaseCheckpointSaver,
     tools: AssistantTools,
     on_action_result: Callable[[list[dict[str, Any]], bool], Awaitable[None]] | None = None,
-) -> Any:
+) -> CompiledStateGraph:
     async def agent(state: AssistantState) -> dict[str, Any]:
         prompt = f"{SYSTEM_PROMPT}\nТекущее время UTC: {datetime.now(UTC).isoformat()}"
         messages = [SystemMessage(content=prompt), *state["messages"]]

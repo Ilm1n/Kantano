@@ -2,6 +2,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, status
 
+from src.assistant.cleanup import AssistantProjectDeletionHook, CheckpointCleanup
 from src.auth.dependencies import get_current_user
 from src.auth.schemas import UserPayload
 from src.db.database import db_helper
@@ -88,7 +89,10 @@ def get_delete_project_use_case(
         event_publisher,
         cache,
     )
-    return DeleteProjectUseCase(lambda: UnitOfWork(event_dispatcher=dispatcher))
+    return DeleteProjectUseCase(
+        lambda: UnitOfWork(event_dispatcher=dispatcher),
+        deletion_hook=AssistantProjectDeletionHook(CheckpointCleanup(UnitOfWork)),
+    )
 
 
 def get_remove_member_use_case(

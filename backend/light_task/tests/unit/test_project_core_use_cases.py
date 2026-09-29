@@ -97,6 +97,9 @@ class FakeProjectRepository:
     async def delete_project(self, project: object) -> None:
         return None
 
+    async def get_project_for_update(self, project_id: int):
+        return await self.get_project(project_id)
+
     async def get_project(self, project_id: int):
         self.project.id = project_id
         return self.project

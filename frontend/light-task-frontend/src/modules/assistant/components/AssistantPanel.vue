@@ -148,7 +148,7 @@ function confirmDeleteChat() {
           <li v-for="(step, index) in actionSteps" :key="step.id" class="border-t border-amber-200 pt-3 dark:border-amber-800">
             <p class="text-sm font-semibold text-amber-900 dark:text-amber-200">{{ action.name === 'ExecutePlan' ? `${index + 1}. ` : '' }}{{ actionNames[step.tool] ?? step.tool }}</p>
             <dl class="mt-2 space-y-1 text-xs text-amber-950 dark:text-amber-100">
-              <div v-for="field in actionFields(step.args, step.display)" :key="field.key" class="flex gap-2">
+              <div v-for="field in actionFields(step.args, step.display ?? undefined)" :key="field.key" class="flex gap-2">
                 <dt class="w-24 shrink-0 font-semibold">{{ field.label }}</dt><dd class="min-w-0 whitespace-pre-wrap break-words"><span v-if="field.key === 'color'" class="mr-1 inline-block h-3 w-3 rounded border border-black/10 align-middle" :style="{ backgroundColor: field.value }"></span>{{ field.value }}</dd>
               </div>
             </dl>

@@ -123,9 +123,9 @@ const formatDate = (dateStr?: string) => {
 
 // --- Инициализация при открытии ---
 watch(
-  () => route.query.taskId,
-  async (newId, oldId) => {
-    if (oldId) {
+  [() => route.query.taskId, () => store.project?.id, () => store.isLoading],
+  async ([newId, boardProjectId, isBoardLoading], [oldId]) => {
+    if (oldId && oldId !== newId) {
       const oldTaskId = Number(oldId);
       if (!Number.isNaN(oldTaskId)) {
         stopPresence(oldTaskId);
@@ -133,6 +133,8 @@ watch(
     }
 
     if (newId) {
+      // A link from another project must wait until fetchBoard finishes resetting task state.
+      if (isBoardLoading || boardProjectId !== Number(route.params.projectId)) return;
       const id = Number(newId);
       if (!isNaN(id)) {
         isVisible.value = true;

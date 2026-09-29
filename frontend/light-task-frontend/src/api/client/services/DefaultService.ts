@@ -17,4 +17,15 @@ export class DefaultService {
             url: '/api/health',
         });
     }
+    /**
+     * Readiness Check
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public readinessCheckApiHealthReadyGet(): CancelablePromise<any> {
+        return this.httpRequest.request({
+            method: 'GET',
+            url: '/api/health/ready',
+        });
+    }
 }

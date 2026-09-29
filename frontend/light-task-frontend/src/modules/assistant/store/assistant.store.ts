@@ -1,5 +1,6 @@
 import { computed, ref, watch } from 'vue';
 import { defineStore } from 'pinia';
+import { getErrorMessage } from '@/utils/error';
 import { useProjectsStore } from '@/modules/projects/store/projects.store';
 import {
   createConversation,
@@ -27,6 +28,8 @@ export const useAssistantStore = defineStore('assistant', () => {
   const isStreaming = ref(false);
   const isLoading = ref(false);
   const error = ref('');
+  let contextVersion = 0;
+  let streamController: AbortController | null = null;
 
   const project = computed(() => projectsStore.projects.find((item) => item.id === projectId.value));
   const conversation = computed(() => conversations.value.find((item) => item.id === conversationId.value));
@@ -43,17 +46,18 @@ export const useAssistantStore = defineStore('assistant', () => {
       || projectId.value === null || !conversationId.value) return;
     const currentProjectId = projectId.value;
     const currentChatId = conversationId.value;
+    const version = contextVersion;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout>;
     onCleanup(() => { cancelled = true; clearTimeout(timer); });
     async function refreshRun() {
       try {
         const detail = await getConversation(currentProjectId, currentChatId);
-        if (cancelled) return;
+        if (cancelled || version !== contextVersion) return;
         messages.value = detail.messages;
         latestRun.value = detail.latestRun;
       } catch (cause) {
-        if (!cancelled) error.value = cause instanceof Error ? cause.message : 'Не удалось обновить чат';
+        if (!cancelled && version === contextVersion) error.value = getErrorMessage(cause);
       }
       if (!cancelled && isBusy.value) timer = setTimeout(refreshRun, 1500);
     }
@@ -66,29 +70,36 @@ export const useAssistantStore = defineStore('assistant', () => {
 
   async function openFromMenu() {
     isOpen.value = true;
+    const version = contextVersion;
     try {
       await ensureProjects();
+      if (version !== contextVersion) return;
       if (projectId.value === null && projectsStore.projects.length) {
         await selectProject(projectsStore.projects[0]!.id);
       }
     } catch (cause) {
-      error.value = cause instanceof Error ? cause.message : 'Не удалось загрузить проекты';
+      if (version !== contextVersion) return;
+      error.value = getErrorMessage(cause);
     }
   }
 
   async function openFromBoard(boardProjectId: number) {
     isOpen.value = true;
     if (isStreaming.value) return;
+    const version = contextVersion;
     try {
       await ensureProjects();
+      if (version !== contextVersion) return;
       if (projectId.value !== boardProjectId) await selectProject(boardProjectId);
     } catch (cause) {
-      error.value = cause instanceof Error ? cause.message : 'Не удалось загрузить проекты';
+      if (version !== contextVersion) return;
+      error.value = getErrorMessage(cause);
     }
   }
 
   async function selectProject(nextProjectId: number) {
     if (isStreaming.value || projectId.value === nextProjectId) return;
+    const version = ++contextVersion;
     projectId.value = nextProjectId;
     conversationId.value = null;
     messages.value = [];
@@ -96,68 +107,89 @@ export const useAssistantStore = defineStore('assistant', () => {
     error.value = '';
     isLoading.value = true;
     try {
-      conversations.value = await listConversations(nextProjectId);
+      const chats = await listConversations(nextProjectId);
+      if (version !== contextVersion) return;
+      conversations.value = chats;
       const previousChat = chatByProject.value[nextProjectId];
       const nextChat = conversations.value.find((item) => item.id === previousChat)
         ?? conversations.value[0];
-      if (nextChat) await selectConversation(nextChat.id);
+      if (nextChat) await loadConversation(nextProjectId, nextChat.id, version);
     } catch (cause) {
-      error.value = cause instanceof Error ? cause.message : 'Не удалось загрузить чаты';
+      if (version !== contextVersion) return;
+      error.value = getErrorMessage(cause);
       conversations.value = [];
     } finally {
-      isLoading.value = false;
+      if (version === contextVersion) isLoading.value = false;
     }
   }
 
   async function selectConversation(nextChatId: string) {
     if (isStreaming.value || projectId.value === null) return;
+    await loadConversation(projectId.value, nextChatId, ++contextVersion);
+  }
+
+  async function loadConversation(currentProjectId: number, nextChatId: string, version: number) {
     isLoading.value = true;
     try {
-      const detail = await getConversation(projectId.value, nextChatId);
+      const detail = await getConversation(currentProjectId, nextChatId);
+      if (version !== contextVersion) return;
       conversationId.value = nextChatId;
-      chatByProject.value[projectId.value] = nextChatId;
+      chatByProject.value[currentProjectId] = nextChatId;
       messages.value = detail.messages;
       latestRun.value = detail.latestRun;
       streamedText.value = '';
       error.value = '';
     } catch (cause) {
-      error.value = cause instanceof Error ? cause.message : 'Не удалось открыть чат';
+      if (version !== contextVersion) return;
+      error.value = getErrorMessage(cause);
     } finally {
-      isLoading.value = false;
+      if (version === contextVersion) isLoading.value = false;
     }
   }
 
   async function createChat(): Promise<string | null> {
     if (projectId.value === null || isStreaming.value || isLoading.value) return null;
+    const currentProjectId = projectId.value;
+    const version = ++contextVersion;
     isLoading.value = true;
     try {
-      const chat = await createConversation(projectId.value);
+      const chat = await createConversation(currentProjectId);
+      if (version !== contextVersion) return null;
       conversations.value = [chat, ...conversations.value];
-      await selectConversation(chat.id);
+      await loadConversation(currentProjectId, chat.id, version);
       return conversationId.value === chat.id ? chat.id : null;
     } catch (cause) {
-      error.value = cause instanceof Error ? cause.message : 'Не удалось создать чат';
+      if (version !== contextVersion) return null;
+      error.value = getErrorMessage(cause);
       return null;
     } finally {
-      isLoading.value = false;
+      if (version === contextVersion) isLoading.value = false;
     }
   }
 
   async function removeChat(chatId: string) {
-    if (projectId.value === null || isStreaming.value) return;
+    if (projectId.value === null || isStreaming.value || isLoading.value) return;
+    const currentProjectId = projectId.value;
+    const version = ++contextVersion;
+    isLoading.value = true;
     try {
-      await deleteConversation(projectId.value, chatId);
+      await deleteConversation(currentProjectId, chatId);
+      if (version !== contextVersion) return;
       delete drafts.value[chatId];
+      if (chatByProject.value[currentProjectId] === chatId) delete chatByProject.value[currentProjectId];
       conversations.value = conversations.value.filter((item) => item.id !== chatId);
       if (conversationId.value === chatId) {
         conversationId.value = null;
         messages.value = [];
         latestRun.value = null;
         const next = conversations.value[0];
-        if (next) await selectConversation(next.id);
+        if (next) await loadConversation(currentProjectId, next.id, version);
       }
     } catch (cause) {
-      error.value = cause instanceof Error ? cause.message : 'Не удалось удалить чат';
+      if (version !== contextVersion) return;
+      error.value = getErrorMessage(cause);
+    } finally {
+      if (version === contextVersion) isLoading.value = false;
     }
   }
 
@@ -197,6 +229,10 @@ export const useAssistantStore = defineStore('assistant', () => {
     let chatId = conversationId.value;
     if (!chatId) chatId = await createChat();
     if (!chatId) return;
+    const currentProjectId = projectId.value!;
+    const version = contextVersion;
+    const controller = new AbortController();
+    streamController = controller;
     drafts.value[originalDraftKey] = '';
     draft.value = '';
     messages.value.push({
@@ -207,14 +243,20 @@ export const useAssistantStore = defineStore('assistant', () => {
     streamedText.value = '';
     error.value = '';
     try {
-      await streamAssistant(projectId.value, chatId, '/runs', { content }, handleEvent);
-      await selectConversationAfterStream(projectId.value, chatId);
+      await streamAssistant(currentProjectId, chatId, '/runs', { content }, (event) => {
+        if (version === contextVersion) handleEvent(event);
+      }, controller.signal);
+      if (version === contextVersion) await selectConversationAfterStream(currentProjectId, chatId, version);
     } catch (cause) {
+      if (version !== contextVersion) return;
       draft.value = content;
-      error.value = cause instanceof Error ? cause.message : 'Не удалось отправить сообщение';
-      await selectConversationAfterStream(projectId.value, chatId);
+      error.value = getErrorMessage(cause);
+      await selectConversationAfterStream(currentProjectId, chatId, version);
     } finally {
-      isStreaming.value = false;
+      if (version === contextVersion) {
+        isStreaming.value = false;
+        streamController = null;
+      }
     }
   }
 
@@ -227,32 +269,52 @@ export const useAssistantStore = defineStore('assistant', () => {
     const actionId = latestRun.value.proposedAction?.action_id
       ?? latestRun.value.proposedAction?.tool_call_id;
     if (!actionId) return;
+    const version = contextVersion;
+    const controller = new AbortController();
+    streamController = controller;
     isStreaming.value = true;
     streamedText.value = '';
     error.value = '';
     try {
       await streamAssistant(
         currentProjectId, currentChatId, `/runs/${runId}/decision`,
-        { approve, action_id: actionId }, handleEvent,
+        { approve, action_id: actionId }, (event) => {
+          if (version === contextVersion) handleEvent(event);
+        }, controller.signal,
       );
-      await selectConversationAfterStream(currentProjectId, currentChatId);
+      if (version === contextVersion) await selectConversationAfterStream(currentProjectId, currentChatId, version);
     } catch (cause) {
-      error.value = cause instanceof Error ? cause.message : 'Не удалось подтвердить действие';
-      await selectConversationAfterStream(currentProjectId, currentChatId);
+      if (version !== contextVersion) return;
+      error.value = getErrorMessage(cause);
+      await selectConversationAfterStream(currentProjectId, currentChatId, version);
     } finally {
-      isStreaming.value = false;
+      if (version === contextVersion) {
+        isStreaming.value = false;
+        streamController = null;
+      }
     }
   }
 
-  async function selectConversationAfterStream(currentProjectId: number, currentChatId: string) {
-    const detail = await getConversation(currentProjectId, currentChatId);
-    messages.value = detail.messages;
-    latestRun.value = detail.latestRun;
-    streamedText.value = '';
-    conversations.value = await listConversations(currentProjectId);
+  async function selectConversationAfterStream(currentProjectId: number, currentChatId: string, version: number) {
+    try {
+      const detail = await getConversation(currentProjectId, currentChatId);
+      if (version !== contextVersion) return;
+      messages.value = detail.messages;
+      latestRun.value = detail.latestRun;
+      streamedText.value = '';
+      const chats = await listConversations(currentProjectId);
+      if (version === contextVersion) conversations.value = chats;
+    } catch (cause) {
+      if (version === contextVersion) error.value = getErrorMessage(cause);
+    }
   }
 
   function reset() {
+    contextVersion++;
+    streamController?.abort();
+    streamController = null;
+    isStreaming.value = false;
+    isLoading.value = false;
     isOpen.value = false;
     projectId.value = null;
     conversationId.value = null;

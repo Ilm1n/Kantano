@@ -16,6 +16,10 @@ class ProjectRepository:
     async def get_project(self, project_id: int) -> Project | None:
         return await self.session.get(Project, project_id)
 
+    async def get_project_for_update(self, project_id: int) -> Project | None:
+        statement = select(Project).where(Project.id == project_id).with_for_update()
+        return await self.session.scalar(statement)
+
     async def list_user_projects(self, user_id: int) -> list[tuple[Project, ProjectRole]]:
         stmt = (
             select(Project, ProjectMember.role)

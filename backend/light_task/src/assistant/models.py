@@ -65,3 +65,10 @@ class AssistantRun(Base, TimestampMixin):
     result: Mapped[dict | None] = mapped_column(JSON)
 
     conversation: Mapped[AssistantConversation] = relationship(back_populates="runs")
+
+
+class AssistantCheckpointCleanup(Base):
+    __tablename__ = "assistant_checkpoint_cleanup"
+
+    thread_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

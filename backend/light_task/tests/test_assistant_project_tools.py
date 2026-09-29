@@ -6,7 +6,10 @@ import pytest
 from fastapi.testclient import TestClient
 from test_create_task_slice import _create_project, _register_and_login
 
-from src.assistant.tools import AssistantTools
+from src.assistant.dependencies import make_assistant_tools
+from src.assistant.dto import ProjectScope
+from src.errors import ErrorCode
+from src.shared.errors import NotFoundError
 
 
 class RecordingPublisher:
@@ -38,10 +41,9 @@ def test_assistant_manages_columns_and_tags_with_existing_use_cases(
 
 async def _exercise_tools(project_id: int, other_project_id: int, user_id: int) -> None:
     publisher = RecordingPublisher()
-    tools = AssistantTools(
-        project_id=project_id,
-        user_id=user_id,
-        event_publisher=publisher,  # type: ignore[arg-type]
+    tools = make_assistant_tools(
+        scope=ProjectScope(project_id=project_id, user_id=user_id),
+        publisher=publisher,  # type: ignore[arg-type]
         cache=NoopCache(),  # type: ignore[arg-type]
     )
 
@@ -82,14 +84,26 @@ async def _exercise_tools(project_id: int, other_project_id: int, user_id: int) 
     assert [tag["id"] for tag in with_removed["tags"]] == [keep["tag_id"]]
     overview = await tools.read("ProjectOverview", {})
     assert {tag["name"]: tag["color"] for tag in overview["tags"]}["Важный"] == "#ABCDEF"
-    other_tools = AssistantTools(
-        project_id=other_project_id,
-        user_id=user_id,
-        event_publisher=publisher,  # type: ignore[arg-type]
+    other_tools = make_assistant_tools(
+        scope=ProjectScope(project_id=other_project_id, user_id=user_id),
+        publisher=publisher,  # type: ignore[arg-type]
         cache=NoopCache(),  # type: ignore[arg-type]
     )
-    with pytest.raises(ValueError, match="this project"):
+    with pytest.raises(NotFoundError) as error:
         await other_tools.execute_write(
             "UpdateTag", {"tag_id": target["tag_id"], "name": "Wrong project"}
         )
+    assert error.value.code == ErrorCode.TAG_NOT_FOUND
+    for tool_name, args in (
+        ("UpdateTask", {"task_id": task["task_id"], "title": "Wrong project"}),
+        ("MoveTask", {"task_id": task["task_id"], "new_column_id": second["column_id"]}),
+        ("AddTagToTask", {"task_id": task["task_id"], "tag_id": target["tag_id"]}),
+    ):
+        with pytest.raises(NotFoundError) as error:
+            await other_tools.execute_write(tool_name, args)
+        assert error.value.code == ErrorCode.TASK_NOT_FOUND
+    unchanged = await tools.read("GetTask", {"task_id": task["task_id"]})
+    assert unchanged["title"] == "Проверка тегов"
+    assert unchanged["column_id"] == first["column_id"]
+    assert [tag["id"] for tag in unchanged["tags"]] == [keep["tag_id"]]
     assert publisher.events

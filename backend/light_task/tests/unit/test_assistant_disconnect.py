@@ -8,7 +8,7 @@ import anyio.lowlevel
 import pytest
 from starlette.requests import ClientDisconnect
 
-from src.assistant import router
+from src.assistant import responses
 
 pytestmark = pytest.mark.no_infra
 
@@ -44,8 +44,7 @@ async def test_disconnect_finishes_cleanup_even_when_stream_is_cancelled(
             if spec_version == "2.4":
                 raise OSError("Connection closed")
 
-    monkeypatch.setattr(router, "interrupt_active_run", cleanup)
-    response = router.AssistantStreamingResponse(stream(), run_id)
+    response = responses.AssistantStreamingResponse(stream(), run_id, cleanup)
     if spec_version == "2.4":
         with pytest.raises(ClientDisconnect):
             await response({"type": "http", "asgi": {"spec_version": spec_version}}, receive, send)
@@ -79,8 +78,7 @@ async def test_external_response_cancellation_finishes_cleanup(
     async def send(message: dict) -> None:
         pass
 
-    monkeypatch.setattr(router, "interrupt_active_run", cleanup)
-    response = router.AssistantStreamingResponse(stream(), run_id)
+    response = responses.AssistantStreamingResponse(stream(), run_id, cleanup)
     async with anyio.create_task_group() as group:
         group.start_soon(response, {"type": "http", "asgi": {"spec_version": "2.3"}}, receive, send)
         await ready.wait()

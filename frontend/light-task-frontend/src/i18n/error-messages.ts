@@ -16,6 +16,11 @@ export const RU_ERROR_MESSAGES: Record<string, string> = {
   INVALID_CURRENT_PASSWORD: 'Текущий пароль указан неверно',
 
   PROJECT_NOT_FOUND: 'Проект не найден',
+  ASSISTANT_DISABLED: 'Помощник сейчас отключён',
+  ASSISTANT_CHAT_NOT_FOUND: 'Чат не найден или уже удалён',
+  ASSISTANT_RUN_NOT_FOUND: 'Запрос помощника не найден',
+  ASSISTANT_RUN_ACTIVE: 'Сначала завершите или подтвердите текущий запрос помощника',
+  ASSISTANT_ACTION_RESOLVED: 'Это действие уже подтверждено или отклонено',
   INSUFFICIENT_PERMISSIONS: 'У вас недостаточно прав для выполнения этого действия',
 
   COLUMN_NOT_FOUND: 'Колонка не найдена',

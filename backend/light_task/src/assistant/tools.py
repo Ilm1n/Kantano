@@ -1,408 +1,68 @@
-# ruff: noqa: RUF001
 from __future__ import annotations
 
-from datetime import datetime
+from collections.abc import Callable
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import func, select
-
-from src.assistant.plans import ID_FIELDS, REFERENCE, ExecutePlan, validate_plan
-from src.boards.constants import TaskPriority
+from src.assistant.dto import ProjectScope
+from src.assistant.queries import AssistantProjectQueries
+from src.assistant.tool_schemas import (
+    AddTagToTask,
+    CreateColumn,
+    CreateTag,
+    CreateTask,
+    MoveColumn,
+    MoveTask,
+    RemoveTagFromTask,
+    RenameColumn,
+    UpdateTag,
+    UpdateTask,
+)
 from src.boards.dto import (
     CreateColumnCommand,
     CreateTaskCommand,
+    MoveColumnCommand,
     MoveTaskCommand,
-    ReorderColumnsCommand,
     UpdateColumnCommand,
     UpdateTaskCommand,
 )
-from src.boards.events import BoardsDomainEventDispatcher
-from src.boards.models import BoardColumn, Task
-from src.boards.repository import BoardRepository
 from src.boards.use_cases import (
     CreateColumnUseCase,
     CreateTaskUseCase,
+    MoveColumnUseCase,
     MoveTaskUseCase,
-    ReorderColumnsUseCase,
     UpdateColumnUseCase,
     UpdateTaskUseCase,
 )
-from src.constants import HEX_COLOR_PATTERN
-from src.db.database import db_helper
 from src.db.unit_of_work import UnitOfWork
-from src.projects.cache import ProjectReadCache
-from src.projects.models import Project, ProjectMember
-from src.realtimev1.publisher import DomainEventPublisher
 from src.tags.dto import CreateTagCommand, UpdateTagCommand
-from src.tags.events import TagsDomainEventDispatcher
-from src.tags.models import Tag
 from src.tags.use_cases import CreateTagUseCase, UpdateTagUseCase
-from src.users.models import User
-
-
-class ProjectOverview(BaseModel):
-    """Read project details, board columns, task counts, members and tags."""
-
-
-class SearchTasks(BaseModel):
-    """Find tasks in the current project by text, assignee or tag."""
-
-    search: str | None = Field(default=None, description="Part of task title or description")
-    assignee_id: int | None = None
-    tag_id: int | None = None
-
-
-class GetTask(BaseModel):
-    """Read one task by its numeric ID in the current project."""
-
-    task_id: int
-
-
-class CreateTask(BaseModel):
-    """Propose creation of one task. The user must confirm before it is executed."""
-
-    title: str = Field(min_length=1, max_length=200)
-    column_id: int = Field(description="ID of an existing column from ProjectOverview")
-    description: str | None = None
-    priority: TaskPriority | None = None
-    assignee_id: int | None = None
-    deadline_at: datetime | None = None
-    tag_ids: list[int] = Field(default_factory=list)
-
-    @field_validator("priority", mode="before")
-    @classmethod
-    def normalize_priority(cls, value: Any) -> Any:
-        return normalize_priority(value)
-
-
-class UpdateTask(BaseModel):
-    """Propose updating fields of one task. The user must confirm before execution."""
-
-    task_id: int
-    title: str | None = Field(default=None, min_length=1, max_length=200)
-    description: str | None = None
-    priority: TaskPriority | None = None
-    assignee_id: int | None = None
-    deadline_at: datetime | None = None
-    tag_ids: list[int] | None = Field(
-        default=None,
-        description="Replace all task tags only when explicitly requested; use AddTagToTask or RemoveTagFromTask for one tag",
-    )
-
-    @field_validator("priority", mode="before")
-    @classmethod
-    def normalize_priority(cls, value: Any) -> Any:
-        return normalize_priority(value)
-
-
-class MoveTask(BaseModel):
-    """Propose moving one task to an existing board column. Requires confirmation."""
-
-    task_id: int
-    new_column_id: int
-
-
-class CreateColumn(BaseModel):
-    """Propose creating one board column at the end. Requires confirmation."""
-
-    name: str = Field(min_length=1, max_length=100)
-
-
-class RenameColumn(BaseModel):
-    """Propose renaming an existing column. Requires confirmation."""
-
-    column_id: int
-    new_name: str = Field(min_length=1, max_length=100)
-
-
-class MoveColumn(BaseModel):
-    """Move a column before another column, or to the end when before_column_id is null."""
-
-    column_id: int
-    before_column_id: int | None = Field(
-        description="Destination column ID, or null to place the column last"
-    )
-
-
-class CreateTag(BaseModel):
-    """Propose creating a project tag. Requires confirmation."""
-
-    name: str = Field(min_length=1, max_length=50)
-    color: str = Field(default="#9CA3AF", pattern=HEX_COLOR_PATTERN)
-
-
-class UpdateTag(BaseModel):
-    """Propose renaming a tag and/or changing its color. Requires confirmation."""
-
-    tag_id: int
-    name: str | None = Field(default=None, min_length=1, max_length=50)
-    color: str | None = Field(default=None, pattern=HEX_COLOR_PATTERN)
-
-
-class AddTagToTask(BaseModel):
-    """Add one existing project tag to one task without removing other tags."""
-
-    task_id: int
-    tag_id: int
-
-
-class RemoveTagFromTask(BaseModel):
-    """Remove one project tag from one task without changing other tags."""
-
-    task_id: int
-    tag_id: int
-
-
-TOOL_SCHEMAS: list[type[BaseModel]] = [
-    ProjectOverview,
-    SearchTasks,
-    GetTask,
-    CreateTask,
-    UpdateTask,
-    MoveTask,
-    CreateColumn,
-    RenameColumn,
-    MoveColumn,
-    CreateTag,
-    UpdateTag,
-    AddTagToTask,
-    RemoveTagFromTask,
-    ExecutePlan,
-]
-WRITE_TOOLS = {
-    "CreateTask",
-    "UpdateTask",
-    "MoveTask",
-    "CreateColumn",
-    "RenameColumn",
-    "MoveColumn",
-    "CreateTag",
-    "UpdateTag",
-    "AddTagToTask",
-    "RemoveTagFromTask",
-}
-
-
-def normalize_priority(value: Any) -> Any:
-    if not isinstance(value, str):
-        return value
-    aliases = {
-        "низкий": "LOW",
-        "средний": "MEDIUM",
-        "высокий": "HIGH",
-        "критический": "CRITICAL",
-    }
-    return aliases.get(value.strip().lower(), value.strip().upper())
-
-
-def validate_write(name: str, args: dict[str, Any]) -> dict[str, Any]:
-    if name == "ExecutePlan":
-        return validate_plan(args, validate_write)
-    schema = next(schema for schema in TOOL_SCHEMAS if schema.__name__ == name)
-    return schema.model_validate(args).model_dump(mode="json", exclude_unset=True)
 
 
 class AssistantTools:
     def __init__(
         self,
-        project_id: int,
-        user_id: int,
-        event_publisher: DomainEventPublisher,
-        cache: ProjectReadCache,
+        scope: ProjectScope,
+        queries: AssistantProjectQueries,
+        board_uow_factory: Callable[[], UnitOfWork],
+        tag_uow_factory: Callable[[], UnitOfWork],
     ) -> None:
-        self.project_id = project_id
-        self.user_id = user_id
-        self.dispatcher = BoardsDomainEventDispatcher(
-            db_helper.async_session_maker, event_publisher, cache
-        )
-        self.tag_dispatcher = TagsDomainEventDispatcher(
-            db_helper.async_session_maker, event_publisher, cache
-        )
+        self.project_id = scope.project_id
+        self.user_id = scope.user_id
+        self._queries = queries
+        self._board_uow_factory = board_uow_factory
+        self._tag_uow_factory = tag_uow_factory
 
     async def read(self, name: str, args: dict[str, Any]) -> dict[str, Any]:
-        async with db_helper.async_session_maker() as session:
-            repository = BoardRepository(session)
-            if not await repository.project_member_exists(
-                project_id=self.project_id, user_id=self.user_id
-            ):
-                raise ValueError("Project access is no longer available")
-            if name == "ProjectOverview":
-                project = await session.get(Project, self.project_id)
-                if project is None:
-                    raise ValueError("Project no longer exists")
-                columns = (
-                    await session.scalars(
-                        select(BoardColumn)
-                        .where(BoardColumn.project_id == self.project_id)
-                        .order_by(BoardColumn.position)
-                    )
-                ).all()
-                count_rows = (
-                    await session.execute(
-                        select(Task.column_id, func.count(Task.id))
-                        .where(Task.project_id == self.project_id)
-                        .group_by(Task.column_id)
-                    )
-                ).all()
-                counts: dict[int, int] = {column_id: count for column_id, count in count_rows}
-                members = (
-                    await session.execute(
-                        select(User.id, User.username, User.full_name)
-                        .join(ProjectMember, ProjectMember.user_id == User.id)
-                        .where(ProjectMember.project_id == self.project_id)
-                    )
-                ).all()
-                tags = (
-                    await session.scalars(select(Tag).where(Tag.project_id == self.project_id))
-                ).all()
-                return {
-                    "project": {
-                        "id": project.id,
-                        "name": project.name,
-                        "description": project.description,
-                    },
-                    "columns": [
-                        {
-                            "id": c.id,
-                            "name": c.name,
-                            "task_count": counts.get(c.id, 0),
-                        }
-                        for c in columns
-                    ],
-                    "members": [
-                        {"id": m.id, "username": m.username, "name": m.full_name} for m in members
-                    ],
-                    "tags": [{"id": t.id, "name": t.name, "color": t.color} for t in tags],
-                }
-            if name == "SearchTasks":
-                query = SearchTasks.model_validate(args)
-                tasks = await repository.list_project_tasks(
-                    project_id=self.project_id,
-                    search=query.search,
-                    assignee_id=query.assignee_id,
-                    tag_ids=[query.tag_id] if query.tag_id else None,
-                )
-                return {
-                    "tasks": [
-                        {
-                            "id": t.id,
-                            "title": t.title,
-                            "column_id": t.column_id,
-                            "priority": t.priority.value if t.priority else None,
-                            "assignee_id": t.assignee_id,
-                        }
-                        for t in tasks[:30]
-                    ],
-                    "truncated": len(tasks) > 30,
-                }
-            if name == "GetTask":
-                query = GetTask.model_validate(args)
-                task = await repository.get_task_with_tags(query.task_id)
-                if task is None or task.project_id != self.project_id:
-                    raise ValueError("Task not found in this project")
-                return {
-                    "id": task.id,
-                    "title": task.title,
-                    "description": task.description,
-                    "column_id": task.column_id,
-                    "priority": task.priority.value if task.priority else None,
-                    "assignee_id": task.assignee_id,
-                    "deadline_at": task.deadline_at.isoformat() if task.deadline_at else None,
-                    "tags": [{"id": tag.id, "name": tag.name} for tag in task.tags],
-                }
-            raise ValueError("Unknown read tool")
+        return await self._queries.read(name, args)
 
     async def describe_action(self, name: str, args: dict[str, Any]) -> dict[str, Any]:
-        if name == "ExecutePlan":
-            steps = []
-            planned: dict[str, str] = {}
-            for step in args["steps"]:
-                fields = dict(step["args"])
-                deferred: dict[str, Any] = {}
-                for field in ID_FIELDS:
-                    value = fields.get(field)
-                    items = value if isinstance(value, list) else [value]
-                    if any(isinstance(item, str) and REFERENCE.fullmatch(item) for item in items):
-                        deferred[field] = value
-                        fields.pop(field)
-                display = await self.describe_action(step["tool"], fields)
-                for field, value in deferred.items():
-                    items = value if isinstance(value, list) else [value]
-                    labels = []
-                    for item in items:
-                        match = REFERENCE.fullmatch(item) if isinstance(item, str) else None
-                        if match:
-                            labels.append(planned[match[1]])
-                        else:
-                            resolved = await self.describe_action(
-                                step["tool"], {field: [item] if isinstance(value, list) else item}
-                            )
-                            label = resolved[field]
-                            labels.extend(label if isinstance(label, list) else [label])
-                    display[field] = labels if isinstance(value, list) else labels[0]
-                steps.append({**step, "display": display})
-                planned[step["id"]] = (
-                    step["args"].get("title") or step["args"].get("name") or "Новый объект"
-                )
-            return {"steps": steps}
-        display: dict[str, Any] = {}
-        async with db_helper.async_session_maker() as session:
-            repository = BoardRepository(session)
-            if not await repository.project_member_exists(
-                project_id=self.project_id, user_id=self.user_id
-            ):
-                raise ValueError("Project access is no longer available")
-            for field, model, title in (
-                ("task_id", Task, Task.title),
-                ("column_id", BoardColumn, BoardColumn.name),
-                ("new_column_id", BoardColumn, BoardColumn.name),
-                ("before_column_id", BoardColumn, BoardColumn.name),
-                ("tag_id", Tag, Tag.name),
-            ):
-                value = args.get(field)
-                if value is not None:
-                    label = await session.scalar(
-                        select(title).where(model.id == value, model.project_id == self.project_id)
-                    )
-                    display[field] = label or "Не найдено в проекте"
-            if args.get("assignee_id") is not None:
-                member = (
-                    await session.execute(
-                        select(User.username, User.full_name)
-                        .join(ProjectMember, ProjectMember.user_id == User.id)
-                        .where(
-                            ProjectMember.project_id == self.project_id,
-                            User.id == args["assignee_id"],
-                        )
-                    )
-                ).first()
-                display["assignee_id"] = (
-                    (member.full_name or member.username) if member else "Не найден в проекте"
-                )
-            if args.get("tag_ids"):
-                tags = {
-                    tag_id: name
-                    for tag_id, name in (
-                        await session.execute(
-                            select(Tag.id, Tag.name).where(
-                                Tag.project_id == self.project_id, Tag.id.in_(args["tag_ids"])
-                            )
-                        )
-                    ).all()
-                }
-                display["tag_ids"] = [
-                    tags.get(tag_id, "Не найден в проекте") for tag_id in args["tag_ids"]
-                ]
-        return display
+        return await self._queries.describe_action(name, args)
 
     async def execute_write(self, name: str, args: dict[str, Any]) -> dict[str, Any]:
         # The API must atomically claim pending -> executing before calling here.
         if name == "CreateColumn":
             data = CreateColumn.model_validate(args)
-            column = await CreateColumnUseCase(
-                lambda: UnitOfWork(event_dispatcher=self.dispatcher)
-            ).execute(
+            column = await CreateColumnUseCase(self._board_uow_factory).execute(
                 CreateColumnCommand(
                     project_id=self.project_id,
                     actor_user_id=self.user_id,
@@ -414,9 +74,7 @@ class AssistantTools:
 
         if name == "RenameColumn":
             data = RenameColumn.model_validate(args)
-            column = await UpdateColumnUseCase(
-                lambda: UnitOfWork(event_dispatcher=self.dispatcher)
-            ).execute(
+            column = await UpdateColumnUseCase(self._board_uow_factory).execute(
                 UpdateColumnCommand(
                     project_id=self.project_id,
                     column_id=data.column_id,
@@ -428,46 +86,19 @@ class AssistantTools:
 
         if name == "MoveColumn":
             data = MoveColumn.model_validate(args)
-            async with db_helper.async_session_maker() as session:
-                column_ids = list(
-                    (
-                        await session.scalars(
-                            select(BoardColumn.id)
-                            .where(BoardColumn.project_id == self.project_id)
-                            .order_by(BoardColumn.position, BoardColumn.id)
-                        )
-                    ).all()
-                )
-            if data.column_id not in column_ids:
-                raise ValueError("Column not found in this project")
-            column_ids.remove(data.column_id)
-            if data.before_column_id is not None:
-                if data.before_column_id not in column_ids:
-                    raise ValueError("Destination column not found in this project")
-                column_ids.insert(column_ids.index(data.before_column_id), data.column_id)
-            else:
-                column_ids.append(data.column_id)
-            await ReorderColumnsUseCase(
-                lambda: UnitOfWork(event_dispatcher=self.dispatcher)
-            ).execute(
-                ReorderColumnsCommand(
+            column = await MoveColumnUseCase(self._board_uow_factory).execute(
+                MoveColumnCommand(
                     project_id=self.project_id,
                     actor_user_id=self.user_id,
-                    column_ids=column_ids,
+                    column_id=data.column_id,
+                    before_column_id=data.before_column_id,
                 )
             )
-            display = await self.describe_action(name, args)
-            return {
-                "column_id": data.column_id,
-                "name": display["column_id"],
-                "kind": "column_moved",
-            }
+            return {"column_id": column.id, "name": column.name, "kind": "column_moved"}
 
         if name == "CreateTag":
             data = CreateTag.model_validate(args)
-            tag = await CreateTagUseCase(
-                lambda: UnitOfWork(event_dispatcher=self.tag_dispatcher)
-            ).execute(
+            tag = await CreateTagUseCase(self._tag_uow_factory).execute(
                 CreateTagCommand(
                     project_id=self.project_id,
                     actor_user_id=self.user_id,
@@ -482,14 +113,9 @@ class AssistantTools:
             changes = data.model_dump(exclude={"tag_id"}, exclude_none=True)
             if not changes:
                 raise ValueError("No tag changes were requested")
-            async with db_helper.async_session_maker() as session:
-                tag = await session.get(Tag, data.tag_id)
-                if tag is None or tag.project_id != self.project_id:
-                    raise ValueError("Tag not found in this project")
-            tag = await UpdateTagUseCase(
-                lambda: UnitOfWork(event_dispatcher=self.tag_dispatcher)
-            ).execute(
+            tag = await UpdateTagUseCase(self._tag_uow_factory).execute(
                 UpdateTagCommand(
+                    project_id=self.project_id,
                     tag_id=data.tag_id,
                     actor_user_id=self.user_id,
                     changes=changes,
@@ -499,13 +125,7 @@ class AssistantTools:
 
         if name == "CreateTask":
             data = CreateTask.model_validate(args)
-            async with db_helper.async_session_maker() as session:
-                column = await session.get(BoardColumn, data.column_id)
-                if column is None or column.project_id != self.project_id:
-                    raise ValueError("Column not found in this project")
-            result = await CreateTaskUseCase(
-                lambda: UnitOfWork(event_dispatcher=self.dispatcher)
-            ).execute(
+            result = await CreateTaskUseCase(self._board_uow_factory).execute(
                 CreateTaskCommand(
                     project_id=self.project_id,
                     column_id=data.column_id,
@@ -520,12 +140,6 @@ class AssistantTools:
             )
             return {"task_id": result.id, "title": result.title, "kind": "created"}
 
-        if name in {"UpdateTask", "MoveTask", "AddTagToTask", "RemoveTagFromTask"}:
-            task_id = int(args["task_id"])
-            async with db_helper.async_session_maker() as session:
-                task = await session.get(Task, task_id)
-                if task is None or task.project_id != self.project_id:
-                    raise ValueError("Task not found in this project")
         if name == "UpdateTask":
             data = UpdateTask.model_validate(args)
             supplied = {key: value for key, value in args.items() if key != "task_id"}
@@ -534,10 +148,9 @@ class AssistantTools:
             validated = data.model_dump(exclude_unset=True)
             validated.pop("task_id", None)
             tag_ids = validated.pop("tag_ids", None)
-            result = await UpdateTaskUseCase(
-                lambda: UnitOfWork(event_dispatcher=self.dispatcher)
-            ).execute(
+            result = await UpdateTaskUseCase(self._board_uow_factory).execute(
                 UpdateTaskCommand(
+                    project_id=self.project_id,
                     task_id=data.task_id,
                     actor_user_id=self.user_id,
                     changes=validated,
@@ -547,14 +160,9 @@ class AssistantTools:
             return {"task_id": result.id, "title": result.title, "kind": "updated"}
         if name == "MoveTask":
             data = MoveTask.model_validate(args)
-            async with db_helper.async_session_maker() as session:
-                column = await session.get(BoardColumn, data.new_column_id)
-                if column is None or column.project_id != self.project_id:
-                    raise ValueError("Column not found in this project")
-            result = await MoveTaskUseCase(
-                lambda: UnitOfWork(event_dispatcher=self.dispatcher)
-            ).execute(
+            result = await MoveTaskUseCase(self._board_uow_factory).execute(
                 MoveTaskCommand(
+                    project_id=self.project_id,
                     task_id=data.task_id,
                     actor_user_id=self.user_id,
                     new_column_id=data.new_column_id,
@@ -565,10 +173,9 @@ class AssistantTools:
             data = (AddTagToTask if name == "AddTagToTask" else RemoveTagFromTask).model_validate(
                 args
             )
-            result = await UpdateTaskUseCase(
-                lambda: UnitOfWork(event_dispatcher=self.dispatcher)
-            ).execute(
+            result = await UpdateTaskUseCase(self._board_uow_factory).execute(
                 UpdateTaskCommand(
+                    project_id=self.project_id,
                     task_id=data.task_id,
                     actor_user_id=self.user_id,
                     changes={},

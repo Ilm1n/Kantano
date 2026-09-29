@@ -14,10 +14,11 @@ from src.assistant import graph as graph_module
 from src.assistant.checkpoints import setup_checkpointer
 from src.assistant.models import AssistantConversation, AssistantRun
 from src.assistant.provider import ModelAnswer
-from src.assistant.router import interrupt_active_run
 from src.assistant.tools import AssistantTools
+from src.assistant.use_cases import AssistantRunLifecycle
 from src.config import settings
 from src.db.database import db_helper
+from src.db.unit_of_work import UnitOfWork
 from src.errors import ErrorCode
 from src.shared.errors import BadRequestError
 
@@ -151,7 +152,7 @@ def test_disconnect_cleanup_only_finishes_active_runs(client: TestClient) -> Non
             session.add_all(runs)
             await session.commit()
         for run in runs:
-            await interrupt_active_run(run.id)
+            await AssistantRunLifecycle(UnitOfWork).interrupt(run.id)
         async with db_helper.async_session_maker() as session:
             states = [(await session.get(AssistantRun, run.id)).status for run in runs]
             assert states == ["interrupted", "unknown", "pending", "completed", "failed"]

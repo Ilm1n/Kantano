@@ -1,12 +1,13 @@
 # ruff: noqa: I001
-from contextlib import asynccontextmanager
+import asyncio
+from contextlib import asynccontextmanager, suppress
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, ORJSONResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import text, update
+from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
 from src.auth.router import router as auth_router
@@ -14,6 +15,8 @@ from src.auth.router import router as auth_router
 # модели импортируются для регистрации в metadata
 from src.assistant.models import AssistantConversation, AssistantMessage, AssistantRun  # noqa: F401
 from src.assistant.router import router as assistant_router
+from src.assistant.cleanup import CheckpointCleanup
+from src.assistant.use_cases import AssistantRunLifecycle
 from src.boards.models import BoardColumn, Task  # noqa: F401
 from src.boards.router import router as board_router
 from src.cache.redis import RedisCache
@@ -48,31 +51,27 @@ observability = initialize_observability(settings.observability)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # startup
-    async with UnitOfWork() as uow:
-        session = uow.session
-        if session is None:
-            raise RuntimeError("UnitOfWork has not been entered")
-        await session.execute(
-            update(AssistantRun)
-            .where(AssistantRun.status == "running")
-            .values(status="interrupted")
-        )
-        await session.execute(
-            update(AssistantRun).where(AssistantRun.status == "executing").values(status="unknown")
-        )
+    await AssistantRunLifecycle(UnitOfWork).interrupt()
+    cleanup = CheckpointCleanup(UnitOfWork)
     cache_backend = RedisCache(settings.cache)
     await cache_backend.start()
     app.state.project_read_cache = ProjectReadCache(cache_backend, settings.cache)
     app.state.realtime_runtime = build_realtime_runtime()
     await app.state.realtime_runtime.start()
+    cleanup_task = asyncio.create_task(cleanup.run())
     logger.info("Application startup")
-    yield
-    # shutdown
-    logger.info("Application shutdown")
-    await app.state.realtime_runtime.stop()
-    await cache_backend.aclose()
-    await db_helper.dispose()
-    observability.shutdown()
+    try:
+        yield
+    finally:
+        cleanup_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await cleanup_task
+        # shutdown
+        logger.info("Application shutdown")
+        await app.state.realtime_runtime.stop()
+        await cache_backend.aclose()
+        await db_helper.dispose()
+        observability.shutdown()
 
 
 main_app = FastAPI(
