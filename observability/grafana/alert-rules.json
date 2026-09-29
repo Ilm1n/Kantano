@@ -112,6 +112,15 @@
     "summary": "Alloy is persistently failing or dropping telemetry exports."
   },
   {
+    "uid": "kantano-prometheus-datasource",
+    "title": "Kantano Grafana Cloud Prometheus unavailable",
+    "expr": "vector(0)",
+    "for": "5m",
+    "noDataState": "OK",
+    "execErrState": "Error",
+    "summary": "Grafana Alerting could not query the Grafana Cloud Prometheus datasource for five minutes."
+  },
+  {
     "uid": "kantano-cloud-quota",
     "title": "Kantano Grafana Cloud quota at 80 percent",
     "datasource": "usage",

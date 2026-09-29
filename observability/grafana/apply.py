@@ -152,7 +152,7 @@ def _alert_payload(rule: dict[str, str]) -> dict[str, Any]:
             },
         ],
         "noDataState": rule["noDataState"],
-        "execErrState": "Error",
+        "execErrState": rule.get("execErrState", "KeepLast"),
         "for": rule["for"],
         "annotations": {"summary": rule["summary"]},
         "labels": {"service": "kantano", "severity": "warning"},
