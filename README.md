@@ -13,8 +13,9 @@ Kantano - веб-приложение для совместной работы �
 - [Быстрый старт](#быстрый-старт)
 - [Архитектура](#архитектура)
 - [Стек](#стек)
+- [ИИ-помощник](#ии-помощник)
 - [Эксплуатация](#эксплуатация)
-- [Observability](#Observability)
+- [Observability](#observability)
 - [Интеграции](#интеграции)
 - [Возможности](#возможности)
 - [Проверки](#проверки)
@@ -25,6 +26,7 @@ Kantano - веб-приложение для совместной работы �
 - проекты с ролями `OWNER`, `MANAGER` и `MEMBER`;
 - настраиваемые колонки и drag-and-drop задач;
 - исполнители, теги, приоритеты, дедлайны и фильтры;
+- проектные чаты с ИИ-помощником: поиск задач и выполнение подтверждённых изменений;
 - приглашения по ссылке или QR-коду с ограничением срока и числа использований;
 - регистрация с подтверждением email и вход через Yandex ID;
 - realtime-обновления доски, списка проектов и состава участников;
@@ -36,13 +38,16 @@ Kantano - веб-приложение для совместной работы �
 
 ```mermaid
 flowchart TB
-    browser["Vue SPA"] -->|"REST /api/*"| gateway["Caddy"]
+    browser["Vue SPA"] -->|"REST / SSE /api/*"| gateway["Caddy"]
     browser -->|"WebSocket /ws/*"| gateway
     gateway --> api["FastAPI"]
     api --> db[("PostgreSQL")]
     api --> redis[("Redis Pub/Sub + cache")]
     api --> storage["Local storage / S3"]
     api --> yandex["Yandex ID"]
+    api --> assistant["LangGraph agent"]
+    assistant --> llm["LLM API"]
+    assistant -->|"checkpoints"| db
     api --> outbox[("Transactional outbox")]
     outbox --> publisher["Outbox publisher"]
     publisher --> rabbit[("RabbitMQ")]
@@ -76,9 +81,30 @@ access token через backend и повторно подключает WebSock
 | Backend | Python 3.12, FastAPI, Pydantic, SQLAlchemy AsyncIO, Alembic |
 | Данные | PostgreSQL 15, Redis 7, RabbitMQ 4, local/S3-compatible storage |
 | Фоновые задачи | Celery, transactional outbox, email gateway |
+| ИИ-помощник | LangGraph, LangChain, tool calling, Pydantic tool schemas, PostgreSQL checkpointer, SSE |
 | Тестирование | pytest, pytest-asyncio, Vitest, Vue Test Utils |
 | Observability | OpenTelemetry, Grafana Alloy, Prometheus, Loki, Tempo, Grafana Cloud, Sentry |
 | Инфраструктура | Docker Compose, Caddy, GitHub Actions, GHCR |
+
+## ИИ-помощник
+
+Помощник работает в контексте проекта: читает актуальные задачи и участников,
+создаёт и изменяет задачи, колонки и теги. Чат открывается в общей боковой панели;
+ответы поступают через Server-Sent Events (SSE).
+
+LangGraph управляет циклом агента и `interrupt/resume` для подтверждений. Tool calling
+использует LangChain и типизированные Pydantic-схемы. Изменения проходят через
+существующие use cases с проверкой прав пользователя. План до 10 последовательных
+действий, включая зависимости между шагами, подтверждается одной кнопкой.
+
+Облачные модели доступны через Google API и OpenAI-compatible API Groq с fallback.
+Для локальной разработки поддерживается LM Studio; режим `local` работает только
+с локальной моделью. История чатов хранится приложением, состояние графа — в
+PostgreSQL checkpointer. В Grafana доступны результаты запусков, LLM latency,
+вызовы инструментов и расход токенов.
+
+Подробнее: [архитектура помощника](./docs/architecture.md#ии-помощник) и
+[настройка моделей](./docs/development.md#ии-помощник).
 
 ## Эксплуатация
 
@@ -112,11 +138,12 @@ Sentry используется отдельно для backend errors, без �
 template, service, environment и тип результата; пользовательские идентификаторы в
 metrics labels не попадают.
 
-В Grafana подготовлены три dashboard:
+В Grafana подготовлены четыре dashboard:
 
 - API: request rate, статусы, error ratio, latency и состояние database pool;
 - background и realtime: outbox, publisher, Celery, RabbitMQ и WebSocket;
-- infrastructure: host/container resources, зависимости и состояние telemetry export.
+- infrastructure: host/container resources, зависимости и состояние telemetry export;
+- assistant: результаты запусков, LLM latency, tool calls, fallback и токены.
 
 Production alerts контролируют доступность компонентов, 5xx и latency, фоновые очереди,
 ресурсы VPS, OOM, сбои экспорта и квоту Grafana Cloud. Локально тот же контур запускается
@@ -131,6 +158,7 @@ dashboards, метрики и сценарии диагностики описа
 | Транзакционные письма | Resend или локальный Mailpit через `EmailGateway` |
 | Внешний вход | Yandex ID OAuth |
 | Файлы | Локальное или S3-compatible хранилище |
+| LLM | Google API, Groq; локально — OpenAI-compatible API LM Studio |
 
 ## Быстрый старт
 

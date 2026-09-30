@@ -1,6 +1,6 @@
 # Kantano Backend
 
-FastAPI-приложение с REST API и WebSocket realtime для Kantano.
+FastAPI-приложение с REST API, WebSocket realtime и ИИ-агентом на LangGraph для Kantano.
 
 ## Структура
 
@@ -13,6 +13,7 @@ src/
 ├── boards/        # колонки, задачи и ordering
 ├── tags/          # теги проекта
 ├── invitations/   # ссылки-приглашения
+├── assistant/     # LangGraph, tool calling, проектные чаты и подтверждения
 ├── cache/         # отказоустойчивый Redis cache backend
 ├── realtimev1/    # WebSocket, Redis Pub/Sub и presence
 ├── observability/  # logging, metrics, tracing и Sentry
@@ -25,6 +26,18 @@ permissions/repository → UnitOfWork → domain events`. Только `UnitOfWo
 транзакцию; realtime публикуется после commit.
 
 Подробнее: [архитектура](../../docs/architecture.md).
+
+## ИИ-помощник
+
+LangGraph исполняет агентный цикл с tool calling через LangChain и Pydantic-схемы.
+Инструменты читают данные выбранного проекта и вызывают board/tag use cases после
+подтверждения пользователя. PostgreSQL хранит историю чатов, состояния запусков
+и checkpoints для `interrupt/resume`; FastAPI передаёт ответы через SSE.
+
+Адаптеры моделей поддерживают Google API, Groq и локальный LM Studio. Настройки:
+[локальная разработка](../../docs/development.md#ии-помощник) и
+[production](../../docs/deployment.md#ии-помощник). Границы слоёв и жизненный цикл
+запуска описаны в [архитектуре](../../docs/architecture.md#ии-помощник).
 
 ## Observability
 
@@ -57,6 +70,7 @@ cd backend/light_task
 uv sync --group dev
 uv run pre-commit install
 uv run alembic upgrade head
+uv run python -m src.assistant.setup_checkpointer
 uv run uvicorn src.main:main_app --host 127.0.0.1 --port 8000 --reload
 ```
 

@@ -9,7 +9,7 @@ realtime-обновления через WebSocket.
 ```text
 src/
 ├── api/           # сгенерированный OpenAPI client и Axios configuration
-├── modules/       # auth, projects, board, invitations, profile, realtime
+├── modules/       # auth, projects, board, assistant, invitations, profile, realtime
 ├── layouts/       # authenticated application shell
 ├── shared/        # UI, consent и analytics
 ├── composables/   # общие Vue composables
@@ -24,6 +24,17 @@ WebSocket-каналы.
 подтверждения, где пользователь после перехода по одноразовой ссылке задаёт пароль.
 
 Подробнее: [архитектура](../../docs/architecture.md).
+
+## ИИ-помощник
+
+`modules/assistant` содержит панель чата, Pinia store и SSE-адаптер. Одна панель
+в `AppLayout` доступна из меню и заголовка доски. Store хранит выбранный проект,
+чат и отдельные черновики при переходах между маршрутами.
+
+UI поддерживает потоковый ответ, подтверждение плана, остановку и ссылки на задачи.
+На широких экранах чат работает рядом с доской и деталями задачи; ширина регулируется.
+REST-запросы используют сгенерированный API-клиент, SSE обрабатывается отдельно.
+Ключи моделей находятся в backend.
 
 ## Запуск
 

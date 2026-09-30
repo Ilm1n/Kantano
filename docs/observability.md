@@ -80,43 +80,27 @@ args/kwargs, query string, SQL parameters и пользовательские о
 с `hide_parameters=True`. Идентификаторы сущностей, пользователей, запросов и задач не
 используются как Prometheus или Loki labels, чтобы ограничивать кардинальность.
 
-## Помощник
+## ИИ-помощник
 
-Дашборд **Kantano Assistant** показывает результаты пользовательских запросов,
-попытки LLM-вызовов (включая fallback, ошибки и остановки), задержки моделей,
-реальные вызовы инструментов и расход токенов. Новых AI-алертов нет.
+| Метрика | Семантика |
+|---|---|
+| `kantano_assistant_runs_total` | Один терминальный результат на сообщение пользователя, после commit; pending/resume не добавляют запрос |
+| `kantano_assistant_llm_calls_total` | Попытки вызова по provider/model, результату, fallback и наличию usage |
+| `kantano_assistant_llm_duration_seconds` | Histogram времени каждой попытки LLM, без ожидания подтверждения |
+| `kantano_assistant_tool_calls_total` | Фактические вызовы инструментов и их результаты |
+| `kantano_assistant_tokens_total` | Input/output tokens из SDK usage; cache/reasoning детали повторно не прибавляются |
+| `kantano_assistant_run_tokens` | Histogram суммарного usage завершённого run, включая resume после подтверждения |
 
-Метрики: `kantano_assistant_runs_total`, `kantano_assistant_llm_calls_total`,
-`kantano_assistant_llm_duration_seconds`, `kantano_assistant_tool_calls_total`,
-`kantano_assistant_tokens_total`, `kantano_assistant_run_tokens`.
+Среднее и p95 на запрос учитывают только run с полным usage. Отсутствующий usage
+помечается `missing`; расход прерванного вызова может быть неизвестен. Прерванные
+потоки и ошибки до получения состояния графа не дают sample гистограммы run tokens.
+`increase` оценивает значения на границах scrape, p95 гистограмм приблизительный;
+метрики не являются точным биллингом. Local/cloud различаются по provider/model и mode.
 
-Один run соответствует сообщению пользователя; pending и resume не являются
-новыми запросами. Терминальный результат учитывается после коммита в БД.
-LLM latency измеряется отдельно для каждой попытки и не включает ожидание
-подтверждения. SSE помощника учитывается в HTTP request/error counters,
-но исключён из обычной HTTP latency, чтобы не влиять на алерт slow API.
-
-Токены берутся из SDK usage metadata всех полученных ответов. Cache/reasoning
-детали уже включены в input/output и повторно не прибавляются. Отсутствующий
-usage помечается `usage="missing"`; это не нулевой расход. Токены прерванного
-вызова могут быть неизвестны. Среднее и p95 на запрос включают только терминальные
-run с полным usage, суммированным через checkpoint между подтверждениями;
-рядом показано число полностью учтённых запросов. Прерванные потоки и ошибки до
-получения состояния графа не дают sample этой гистограммы.
-
-Prometheus counters описывают наблюдаемый расход за выбранный период, а не
-точный биллинг. `increase` может давать дробные оценки на границах scrape;
-p95 гистограмм приблизительный. Local и cloud разделены provider/model и mode.
-Учёта по пользователям в БД нет. Идентификаторы и содержимое проекта не являются
-metric labels. JSON-логи `assistant_run`, `assistant_run_terminal`,
-`assistant_llm_call`, `assistant_action`, `assistant_tool_call` содержат только
-метаданные; ошибки не включают текст исключения с чувствительными данными.
-
-Информационные stat-панели (расход токенов, счётчики, память Redis) не используют
-стандартный порог Grafana 80. На графиках статусов запросов и фоновых заданий
-цвета закреплены: успех — зелёный, ошибка — красный, retry/rate limit — оранжевый,
-остановка — серый. Для RAM,
-диска, heartbeat и доли 5xx сохраняются явно заданные пороги состояния.
+JSON-логи содержат run/conversation IDs, provider/model, шаги, длительности, fallback
+и результаты инструментов. Переписка, данные задач, аргументы инструментов и ключи
+не логируются; IDs не используются как metric labels. SSE входит в HTTP counters,
+но исключён из обычной HTTP latency.
 
 ## Окружения и границы доступа
 
@@ -207,18 +191,23 @@ task obs:logs
 
 ## Dashboards
 
-Grafana создаёт папку `Kantano` с тремя dashboards:
+Grafana создаёт папку `Kantano` с четырьмя dashboards:
 
 | Dashboard | Область диагностики |
 |---|---|
 | `Kantano / API` | Request rate, HTTP statuses, latency, database pool, Redis cache и application logs |
 | `Kantano / Background and realtime` | Outbox backlog и age, publisher/worker health, Celery attempts, RabbitMQ queue и WebSocket activity |
 | `Kantano / Infrastructure and telemetry` | Scrape targets, host/container resources, dependencies, Alloy export и Grafana Cloud quota |
+| `Kantano Assistant` | Результаты запусков, LLM/tool calls, latency, fallback, токены и полнота usage |
 
 Dashboard variables фильтруют данные по `environment`; API dashboard дополнительно
 выбирает `job`. Нулевой outbox отображается отдельно от отсутствующей метрики, а age
 вычисляется только для положительного Unix timestamp. Shared gauges агрегируются в одну
 серию, чтобы количество backend-процессов не искажало backlog и heartbeat.
+
+Информационные stat-панели отображаются нейтрально. Для статусов закреплены цвета:
+успех — зелёный, ошибка — красный, retry/rate limit — оранжевый, остановка — серый.
+RAM, диск, heartbeat и доля 5xx используют явно заданные пороги состояния.
 
 ## Прикладные метрики
 
@@ -260,8 +249,9 @@ Dashboard variables фильтруют данные по `environment`; API dash
 | RabbitMQ | Aggregated `/metrics`, четыре используемые families и `up`; per-object metrics отключены. |
 | Alloy | Используемые `otelcol_exporter_*`, `prometheus_remote_storage_*`, `loki_write_*` и `up`. |
 
-`up` разрешён для девяти production jobs. Неиспользуемые families, `*_created`, histogram
-`*_sum` и `*_count` отбрасываются. HTTP histogram buckets не изменены.
+`up` разрешён для девяти production jobs. Неиспользуемые families и `*_created`
+отбрасываются. Histogram `*_sum` и `*_count` сохраняются для LLM latency и run tokens;
+у остальных гистограмм экспортируются используемые buckets.
 
 `grafanacloud_*` читаются из Grafana Cloud usage datasource и указаны в валидаторе как
 external exceptions; VPS их не отправляет.

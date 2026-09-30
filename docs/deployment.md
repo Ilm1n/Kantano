@@ -56,19 +56,16 @@ Repository Variables:
 `GITHUB_TOKEN` предоставляется Actions автоматически. Значения секретов не должны
 храниться в репозитории или попадать в логи.
 
-### Помощник
+### ИИ-помощник
 
-Для включения помощника заполните Repository Variables `ASSISTANT_ENABLED=true`,
-`ASSISTANT_MODE=cloud` и Repository Secrets `ASSISTANT_GOOGLE_API_KEY`,
-`ASSISTANT_GROQ_API_KEY`. Достаточно хотя бы одного ключа; для полной цепочки fallback
-нужны оба. Workflow передаёт их в `LIGHTTASK_CONFIG__ASSISTANT__*` в `.env.backend`.
-Этот файл перезаписывается при каждом деплое, поэтому настройки задаются в GitHub.
+Repository Variables: `ASSISTANT_ENABLED=true`, `ASSISTANT_MODE=cloud`.
+Repository Secrets: `ASSISTANT_GOOGLE_API_KEY`, `ASSISTANT_GROQ_API_KEY`.
+Достаточно одного ключа; оба включают полную [цепочку fallback](./development.md#ии-помощник).
+Workflow записывает настройки в `LIGHTTASK_CONFIG__ASSISTANT__*` в `.env.backend`
+при каждом деплое. Без переменных помощник выключен; режим по умолчанию — `cloud`.
 
-По умолчанию используются `gemini-3.1-flash-lite`, затем `gemma-4-26b-a4b-it`,
-затем Groq `openai/gpt-oss-20b`. Если переменные не заданы, помощник выключен,
-а режим остаётся `cloud`. LM Studio в production запрещён валидатором настроек.
-Alembic и официальный `AsyncPostgresSaver.setup()` выполняются сервисом migrations
-до старта API; вручную создавать таблицы не нужно.
+Режим `local` запрещён валидатором production-настроек. Сервис `migrations`
+применяет Alembic и официальный `AsyncPostgresSaver.setup()` до запуска API.
 
 ## Резервные копии PostgreSQL
 

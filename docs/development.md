@@ -122,40 +122,23 @@ Vite проксирует `/api` и `/ws` на `127.0.0.1:8000`. Для отде
 
 ## ИИ-помощник
 
-В обычном `docker-compose.dev.yml` помощник включён в локальном режиме по умолчанию.
-Запустите в LM Studio сервер OpenAI compatible на порту `1234` и загрузите
-`google/gemma-4-e4b`. Затем из корня репозитория запустите приложение:
+Dev Compose включает помощника в режиме `local`. Для ответов модели запустите
+OpenAI-compatible сервер LM Studio на порту `1234` с моделью `google/gemma-4-e4b`.
+Приложение запускается через `task dev`; настройки переопределяются в корневом `.env`:
 
-```bash
-task dev:up
-task dev:frontend
-```
+| Переменная с префиксом `LIGHTTASK_CONFIG__ASSISTANT__` | Dev default |
+|---|---|
+| `ENABLED` | `true`; `false` отключает помощника |
+| `MODE` | `local`; `cloud` включает облачные адаптеры |
+| `LOCAL_BASE_URL` | `http://host.docker.internal:1234/v1` из контейнера |
+| `LOCAL_MODEL` | `google/gemma-4-e4b` |
+| `LOCAL_API_KEY` | `lm-studio` |
 
-Dev Compose задаёт `LIGHTTASK_CONFIG__ASSISTANT__ENABLED=true`,
-`LIGHTTASK_CONFIG__ASSISTANT__MODE=local`,
-`LIGHTTASK_CONFIG__ASSISTANT__LOCAL_BASE_URL=http://host.docker.internal:1234/v1` и
-`LIGHTTASK_CONFIG__ASSISTANT__LOCAL_MODEL=google/gemma-4-e4b` по умолчанию.
-Эти значения можно переопределить через переменные окружения. В локальном режиме
-backend отправляет запросы только в LM Studio; на облачные модели он не переключается.
-Помощник открывается из левого меню на любой авторизованной странице и из заголовка
-доски. Чаты привязаны к проекту. Изменения задач, колонок и тегов помощник
-показывает для подтверждения перед выполнением.
-За один запрос можно выполнить до 10 последовательных действий. Инструмент `ExecutePlan`
-подготавливает конкретные шаги, включая зависимости: например, создание колонки и задач
-в ней. Весь показанный план подтверждается одной кнопкой; изменения вне этого списка
-требуют нового подтверждения. При ошибке выполнение останавливается, уже сделанные
-изменения сохраняются. Повторное подтверждение не выполняет план второй раз.
-В карточке показываются имена участников, названия объектов и понятные даты.
-При обновлении страницы во время ответа запрос прерывается,
-а чат остаётся доступным. Уже выполненные изменения и их результаты сохраняются;
-изменение с неизвестным исходом автоматически не повторяется.
+Режим `local` обращается только к локальному серверу, без cloud fallback.
+При запуске backend на хосте используйте
+`LIGHTTASK_CONFIG__ASSISTANT__LOCAL_BASE_URL=http://localhost:1234/v1`.
 
-Во время ответа кнопка отправки заменяется кнопкой остановки. Остановка вопроса
-или подготовки плана проходит без сообщения в истории. При остановке подтверждённого
-плана начатое изменение завершается, остальные отменяются; в чате сохраняется краткий
-итог. Отмена не откатывает уже выполненные изменения.
-
-Для облачной проверки задайте в локальном `.env`:
+Для облачных моделей:
 
 ```dotenv
 LIGHTTASK_CONFIG__ASSISTANT__ENABLED=true
@@ -164,16 +147,19 @@ LIGHTTASK_CONFIG__ASSISTANT__GOOGLE_API_KEY=<google-api-key>
 LIGHTTASK_CONFIG__ASSISTANT__GROQ_API_KEY=<groq-api-key>
 ```
 
-Ключ Groq необязателен, но без него резервная цепочка ограничена моделями Google.
-Cloud использует `gemini-3.1-flash-lite`, затем `gemma-4-26b-a4b-it`, затем
-`openai/gpt-oss-20b` через Groq. Доступность и лимиты этих моделей зависят от ключа
-и тарифа провайдера. Ключи остаются только в backend и не записываются в логи.
-Production запрещает режим `local`.
+Fallback по умолчанию: Google `gemini-3.1-flash-lite` → `gemma-4-26b-a4b-it` →
+Groq `openai/gpt-oss-20b`. Используются провайдеры с заданными ключами.
+Модели переопределяются через `PRIMARY_MODEL`, `GOOGLE_FALLBACK_MODEL`, `GROQ_MODEL`
+с тем же префиксом. Ключи хранятся в backend; production допускает только `cloud`.
 
-Таблицы `assistant_*` создаёт Alembic. Внутренние таблицы LangGraph подготавливает
-официальный `AsyncPostgresSaver.setup()` в Compose migration шаге до запуска API.
-При запуске backend вне Docker после `uv run alembic upgrade head` выполните
-`uv run python -m src.assistant.setup_checkpointer`.
+После изменения `.env` пересоздайте backend:
+
+```bash
+docker compose -f docker-compose.dev.yml up -d --force-recreate backend
+```
+
+Compose migration шаг применяет Alembic и `AsyncPostgresSaver.setup()` до старта API.
+Границы состояния и выполнения: [архитектура помощника](./architecture.md#ии-помощник).
 
 ## Запуск backend вне Docker
 
@@ -185,6 +171,7 @@ docker compose -f docker-compose.dev.yml up -d db redis rabbitmq celery-worker o
 cd backend/light_task
 uv sync --group dev
 uv run alembic upgrade head
+uv run python -m src.assistant.setup_checkpointer
 uv run uvicorn src.main:main_app --host 127.0.0.1 --port 8000 --reload
 ```
 
