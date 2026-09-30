@@ -5,6 +5,7 @@
 import type { BaseHttpRequest } from './core/BaseHttpRequest';
 import type { OpenAPIConfig } from './core/OpenAPI';
 import { AxiosHttpRequest } from './core/AxiosHttpRequest';
+import { AssistantService } from './services/AssistantService';
 import { AuthService } from './services/AuthService';
 import { BoardsService } from './services/BoardsService';
 import { DefaultService } from './services/DefaultService';
@@ -15,6 +16,7 @@ import { TagsService } from './services/TagsService';
 import { UsersService } from './services/UsersService';
 type HttpRequestConstructor = new (config: OpenAPIConfig) => BaseHttpRequest;
 export class KantanoClient {
+    public readonly assistant: AssistantService;
     public readonly auth: AuthService;
     public readonly boards: BoardsService;
     public readonly default: DefaultService;
@@ -36,6 +38,7 @@ export class KantanoClient {
             HEADERS: config?.HEADERS,
             ENCODE_PATH: config?.ENCODE_PATH,
         });
+        this.assistant = new AssistantService(this.request);
         this.auth = new AuthService(this.request);
         this.boards = new BoardsService(this.request);
         this.default = new DefaultService(this.request);
@@ -46,4 +49,3 @@ export class KantanoClient {
         this.users = new UsersService(this.request);
     }
 }
-

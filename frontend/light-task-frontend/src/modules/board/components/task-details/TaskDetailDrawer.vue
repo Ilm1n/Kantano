@@ -2,16 +2,17 @@
 import { ref, watch, computed, onUnmounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useBoardStore } from "../../store/board.store";
-import { watchDebounced } from "@vueuse/core";
+import { useBreakpoints, watchDebounced } from "@vueuse/core";
 import { useToast } from "primevue/usetoast";
 import { getErrorMessage } from "@/utils/error";
 import { useConfirm } from "primevue/useconfirm";
 import type { TaskPriority, TaskRead, TaskUpdate } from "@/api/client";
 import { useAuthStore } from "@/modules/auth/store/auth.store";
 import { useRealtimeStore } from "@/modules/realtime/store/realtime.store";
+import { useAssistantStore } from "@/modules/assistant/store/assistant.store";
 
 // UI Components
-import Drawer from "primevue/drawer";
+import TaskDetailsPanel from "./TaskDetailsPanel.vue";
 import InputText from "primevue/inputtext";
 import Textarea from "primevue/textarea";
 import Skeleton from "primevue/skeleton";
@@ -23,6 +24,9 @@ const router = useRouter();
 const store = useBoardStore();
 const authStore = useAuthStore();
 const realtimeStore = useRealtimeStore();
+const assistantStore = useAssistantStore();
+const isWideScreen = useBreakpoints({ wide: 1536 }).greaterOrEqual("wide");
+const besideAssistant = computed(() => assistantStore.isOpen && isWideScreen.value);
 const toast = useToast();
 const confirm = useConfirm();
 
@@ -119,9 +123,9 @@ const formatDate = (dateStr?: string) => {
 
 // --- Инициализация при открытии ---
 watch(
-  () => route.query.taskId,
-  async (newId, oldId) => {
-    if (oldId) {
+  [() => route.query.taskId, () => store.project?.id, () => store.isLoading],
+  async ([newId, boardProjectId, isBoardLoading], [oldId]) => {
+    if (oldId && oldId !== newId) {
       const oldTaskId = Number(oldId);
       if (!Number.isNaN(oldTaskId)) {
         stopPresence(oldTaskId);
@@ -129,6 +133,8 @@ watch(
     }
 
     if (newId) {
+      // A link from another project must wait until fetchBoard finishes resetting task state.
+      if (isBoardLoading || boardProjectId !== Number(route.params.projectId)) return;
       const id = Number(newId);
       if (!isNaN(id)) {
         isVisible.value = true;
@@ -405,24 +411,10 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <Drawer
+  <TaskDetailsPanel
     v-model:visible="isVisible"
-    position="right"
-    class="!w-full md:!w-[700px] !bg-white dark:!bg-dark-surface !border-l dark:!border-dark-border !transition-colors !duration-100"
-    :pt="{
-      mask: { class: 'backdrop-blur-[1px]' },
-      header: {
-        class:
-          '!bg-white dark:!bg-dark-surface !border-b !border-gray-200 dark:!border-dark-border !p-5',
-      },
-      content: {
-        class:
-          '!bg-white dark:!bg-dark-surface !p-6 !overflow-hidden flex flex-col',
-      },
-      closeButton: {
-        class: 'hover:!bg-gray-100 dark:hover:!bg-slate-800 !text-slate-500',
-      },
-    }"
+    :beside-assistant="besideAssistant"
+    :assistant-width="assistantStore.panelWidth"
     @hide="onClose"
   >
     <template #header>
@@ -431,7 +423,7 @@ onUnmounted(() => {
           <i class="pi pi-check-square text-primary-600"></i>
         </div>
         <span class="font-bold text-slate-800 dark:text-white text-base">
-          Детали задачи #{{ store.selectedTask?.id }}
+          Детали задачи
         </span>
       </div>
     </template>
@@ -587,7 +579,7 @@ onUnmounted(() => {
         </div>
       </div>
     </template>
-  </Drawer>
+  </TaskDetailsPanel>
 </template>
 
 <style scoped>

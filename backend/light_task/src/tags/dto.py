@@ -25,6 +25,7 @@ class UpdateTagCommand:
     actor_user_id: int
     changes: dict[str, Any]
     client_mutation_id: str | None = None
+    project_id: int | None = None
 
 
 @dataclass(frozen=True, kw_only=True)

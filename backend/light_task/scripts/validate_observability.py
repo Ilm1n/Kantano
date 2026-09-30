@@ -178,6 +178,7 @@ def representative_labels(name: str) -> dict[str, str]:
     for prefix, producer in (
         ("http_", "kantano-api"),
         ("kantano_cache_", "kantano-api"),
+        ("kantano_assistant_", "kantano-api"),
         ("kantano_db_", "kantano-api"),
         ("kantano_realtime_", "kantano-api"),
         ("kantano_outbox_", "kantano-outbox-publisher"),

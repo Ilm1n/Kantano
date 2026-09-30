@@ -120,6 +120,47 @@ Vite проксирует `/api` и `/ws` на `127.0.0.1:8000`. Для отде
 адрес backend без завершающего `/` и без суффикса `/api`, например
 `VITE_API_URL=http://localhost:8000`.
 
+## ИИ-помощник
+
+Dev Compose включает помощника в режиме `local`. Для ответов модели запустите
+OpenAI-compatible сервер LM Studio на порту `1234` с моделью `google/gemma-4-e4b`.
+Приложение запускается через `task dev`; настройки переопределяются в корневом `.env`:
+
+| Переменная с префиксом `LIGHTTASK_CONFIG__ASSISTANT__` | Dev default |
+|---|---|
+| `ENABLED` | `true`; `false` отключает помощника |
+| `MODE` | `local`; `cloud` включает облачные адаптеры |
+| `LOCAL_BASE_URL` | `http://host.docker.internal:1234/v1` из контейнера |
+| `LOCAL_MODEL` | `google/gemma-4-e4b` |
+| `LOCAL_API_KEY` | `lm-studio` |
+
+Режим `local` обращается только к локальному серверу, без cloud fallback.
+При запуске backend на хосте используйте
+`LIGHTTASK_CONFIG__ASSISTANT__LOCAL_BASE_URL=http://localhost:1234/v1`.
+
+Для облачных моделей:
+
+```dotenv
+LIGHTTASK_CONFIG__ASSISTANT__ENABLED=true
+LIGHTTASK_CONFIG__ASSISTANT__MODE=cloud
+LIGHTTASK_CONFIG__ASSISTANT__GOOGLE_API_KEY=<google-api-key>
+LIGHTTASK_CONFIG__ASSISTANT__GROQ_API_KEY=<groq-api-key>
+```
+
+Fallback по умолчанию: Google `gemini-3.1-flash-lite` → `gemma-4-26b-a4b-it` →
+Groq `openai/gpt-oss-20b`. Используются провайдеры с заданными ключами.
+Модели переопределяются через `PRIMARY_MODEL`, `GOOGLE_FALLBACK_MODEL`, `GROQ_MODEL`
+с тем же префиксом. Ключи хранятся в backend; production допускает только `cloud`.
+
+После изменения `.env` пересоздайте backend:
+
+```bash
+docker compose -f docker-compose.dev.yml up -d --force-recreate backend
+```
+
+Compose migration шаг применяет Alembic и `AsyncPostgresSaver.setup()` до старта API.
+Границы состояния и выполнения: [архитектура помощника](./architecture.md#ии-помощник).
+
 ## Запуск backend вне Docker
 
 PostgreSQL, Redis и фоновые сервисы можно оставить в Compose:
@@ -130,6 +171,7 @@ docker compose -f docker-compose.dev.yml up -d db redis rabbitmq celery-worker o
 cd backend/light_task
 uv sync --group dev
 uv run alembic upgrade head
+uv run python -m src.assistant.setup_checkpointer
 uv run uvicorn src.main:main_app --host 127.0.0.1 --port 8000 --reload
 ```
 

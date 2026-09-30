@@ -26,6 +26,20 @@ class BoardRepository:
         )
         return list((await self.session.execute(stmt)).scalars().all())
 
+    async def lock_project(self, project_id: int) -> None:
+        await self.session.scalar(
+            select(Project.id).where(Project.id == project_id).with_for_update()
+        )
+
+    async def list_columns_for_update(self, project_id: int) -> list[BoardColumn]:
+        statement = (
+            select(BoardColumn)
+            .where(BoardColumn.project_id == project_id)
+            .order_by(BoardColumn.position, BoardColumn.id)
+            .with_for_update()
+        )
+        return list((await self.session.scalars(statement)).all())
+
     async def list_project_tasks(
         self,
         *,
@@ -33,12 +47,14 @@ class BoardRepository:
         assignee_id: int | None = None,
         tag_ids: list[int] | None = None,
         search: str | None = None,
+        limit: int | None = None,
+        offset: int = 0,
     ) -> list[Task]:
         stmt = (
             select(Task)
             .where(Task.project_id == project_id)
             .options(selectinload(Task.tags), selectinload(Task.assignee))
-            .order_by(Task.updated_at.desc())
+            .order_by(Task.updated_at.desc(), Task.id.desc())
         )
 
         if assignee_id:
@@ -54,6 +70,11 @@ class BoardRepository:
 
         if tag_ids:
             stmt = stmt.join(Task.tags).where(Tag.id.in_(tag_ids)).distinct()
+
+        if limit is not None:
+            stmt = stmt.limit(limit)
+        if offset:
+            stmt = stmt.offset(offset)
 
         return list((await self.session.execute(stmt)).scalars().all())
 
@@ -212,7 +233,12 @@ class BoardRepository:
         return (await self.session.execute(stmt)).scalar_one_or_none()
 
     async def get_task_for_update(self, task_id: int) -> Task | None:
-        stmt = select(Task).where(Task.id == task_id).options(selectinload(Task.tags))
+        stmt = (
+            select(Task)
+            .where(Task.id == task_id)
+            .options(selectinload(Task.tags))
+            .with_for_update()
+        )
         return (await self.session.execute(stmt)).scalar_one_or_none()
 
     def save_task(self, task: Task) -> None:

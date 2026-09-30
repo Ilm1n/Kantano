@@ -9,9 +9,9 @@
 |---|---|---|
 | Качество backend | Ruff, Basedpyright | Стиль, форматирование и типы в `src` |
 | Backend unit | pytest, pytest-asyncio | Use cases, permissions, ordering и UnitOfWork без инфраструктуры |
-| Backend integration | pytest, FastAPI TestClient | REST-сценарии, PostgreSQL, Redis, RabbitMQ, OAuth и realtime |
+| Backend integration | pytest, FastAPI TestClient | REST, PostgreSQL, Redis, RabbitMQ, OAuth, realtime и LangGraph-сценарии |
 | Architecture | pytest | Запрет legacy services, commit вне UnitOfWork и прямой realtime publish |
-| Frontend unit | Vitest, Vue Test Utils, jsdom | Auth, Yandex flow, board store и analytics context |
+| Frontend unit | Vitest, Vue Test Utils, jsdom | Auth, board/assistant stores, SSE-адаптер и analytics context |
 | Frontend build | vue-tsc, Vite | Типы и production-сборка |
 
 ## Backend
@@ -30,6 +30,10 @@ Task автоматически останавливает тестовый Comp
 тестами и отказывается запускать integration tests против БД без `test` в имени или
 Redis DB 0. Вызовы внешнего email API выполняются через `httpx.MockTransport`; реальный
 API-ключ не требуется. Тестовые JWT-ключи находятся в `tests/fixtures`.
+
+Тесты помощника проверяют изоляцию проектов, повторное подтверждение,
+зависимости шагов плана, остановку, разрыв SSE и учёт usage. LLM-вызовы подменяются;
+LM Studio и облачные ключи для pytest не требуются.
 
 Unit tests не требуют Docker:
 

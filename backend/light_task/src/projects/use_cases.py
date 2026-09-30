@@ -29,6 +29,7 @@ from src.projects.events import (
 )
 from src.projects.models import ProjectMember
 from src.projects.permissions import ProjectMemberPolicy
+from src.projects.ports import ProjectDeletionHook
 from src.projects.repository import ProjectRepository
 from src.projects.schemas import ProjectMemberRead, ProjectRead
 from src.shared.errors import AppError, DatabaseError, NotFoundError
@@ -283,9 +284,11 @@ class DeleteProjectUseCase:
         self,
         uow_factory: Callable[[], UnitOfWork],
         policy: ProjectMemberPolicy | None = None,
+        deletion_hook: ProjectDeletionHook | None = None,
     ) -> None:
         self._uow_factory = uow_factory
         self._policy = policy or ProjectMemberPolicy()
+        self._deletion_hook = deletion_hook
 
     async def execute(self, command: DeleteProjectCommand) -> None:
         try:
@@ -300,9 +303,12 @@ class DeleteProjectUseCase:
                 )
                 self._policy.ensure_project_owner(requester_member=requester_member)
 
-                project = await repository.get_project(command.project_id)
+                project = await repository.get_project_for_update(command.project_id)
                 if project is None:
                     raise NotFoundError(ErrorCode.PROJECT_NOT_FOUND)
+
+                if self._deletion_hook is not None:
+                    await self._deletion_hook.prepare(uow.session, command.project_id)
 
                 affected_user_ids = await repository.get_project_member_user_ids(command.project_id)
                 await repository.delete_project(project)
@@ -315,6 +321,8 @@ class DeleteProjectUseCase:
                         client_mutation_id=command.client_mutation_id,
                     )
                 )
+            if self._deletion_hook is not None:
+                await self._deletion_hook.cleanup()
         except AppError:
             raise
         except Exception as exc:

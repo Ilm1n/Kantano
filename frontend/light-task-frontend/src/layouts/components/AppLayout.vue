@@ -11,9 +11,12 @@ import Menu from 'primevue/menu';
 import {useBreakpoints} from "@vueuse/core";
 import UserAvatar from "@/shared/ui/UserAvatar.vue"; //
 import { useRealtimeStore } from '@/modules/realtime/store/realtime.store';
+import { useAssistantStore } from '@/modules/assistant/store/assistant.store';
+import AssistantPanel from '@/modules/assistant/components/AssistantPanel.vue';
 
 const authStore = useAuthStore();
 const realtimeStore = useRealtimeStore();
+const assistantStore = useAssistantStore();
 const router = useRouter();
 const {isDark, toggleTheme} = useTheme();
 const isMobileMenuOpen = ref(false);
@@ -92,6 +95,7 @@ watch(
     } else {
       realtimeStore.disconnectProject();
       realtimeStore.disconnectUser();
+      assistantStore.reset();
     }
   },
   { immediate: true }
@@ -148,6 +152,16 @@ watch(
             :collapsed="isSidebarCollapsed"
             @click="isMobileMenuOpen = false"
         />
+        <button
+          type="button"
+          title="Помощник"
+          class="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left font-medium text-slate-600 transition-colors hover:bg-gray-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-700/50 dark:hover:text-slate-200"
+          :class="isSidebarCollapsed ? 'justify-center !px-2' : ''"
+          @click="isMobileMenuOpen = false; assistantStore.openFromMenu()"
+        >
+          <i class="pi pi-sparkles shrink-0 text-lg" aria-hidden="true"></i>
+          <span v-if="!isSidebarCollapsed">Помощник</span>
+        </button>
       </nav>
 
       <!-- User Profile & Footer -->
@@ -257,6 +271,7 @@ watch(
         </div>
       </div>
     </main>
+    <AssistantPanel v-if="assistantStore.isOpen" />
   </div>
 </template>
 

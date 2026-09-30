@@ -80,6 +80,28 @@ args/kwargs, query string, SQL parameters и пользовательские о
 с `hide_parameters=True`. Идентификаторы сущностей, пользователей, запросов и задач не
 используются как Prometheus или Loki labels, чтобы ограничивать кардинальность.
 
+## ИИ-помощник
+
+| Метрика | Семантика |
+|---|---|
+| `kantano_assistant_runs_total` | Один терминальный результат на сообщение пользователя, после commit; pending/resume не добавляют запрос |
+| `kantano_assistant_llm_calls_total` | Попытки вызова по provider/model, результату, fallback и наличию usage |
+| `kantano_assistant_llm_duration_seconds` | Histogram времени каждой попытки LLM, без ожидания подтверждения |
+| `kantano_assistant_tool_calls_total` | Фактические вызовы инструментов и их результаты |
+| `kantano_assistant_tokens_total` | Input/output tokens из SDK usage; cache/reasoning детали повторно не прибавляются |
+| `kantano_assistant_run_tokens` | Histogram суммарного usage завершённого run, включая resume после подтверждения |
+
+Среднее и p95 на запрос учитывают только run с полным usage. Отсутствующий usage
+помечается `missing`; расход прерванного вызова может быть неизвестен. Прерванные
+потоки и ошибки до получения состояния графа не дают sample гистограммы run tokens.
+`increase` оценивает значения на границах scrape, p95 гистограмм приблизительный;
+метрики не являются точным биллингом. Local/cloud различаются по provider/model и mode.
+
+JSON-логи содержат run/conversation IDs, provider/model, шаги, длительности, fallback
+и результаты инструментов. Переписка, данные задач, аргументы инструментов и ключи
+не логируются; IDs не используются как metric labels. SSE входит в HTTP counters,
+но исключён из обычной HTTP latency.
+
 ## Окружения и границы доступа
 
 | Компонент | Local | Production |
@@ -169,18 +191,23 @@ task obs:logs
 
 ## Dashboards
 
-Grafana создаёт папку `Kantano` с тремя dashboards:
+Grafana создаёт папку `Kantano` с четырьмя dashboards:
 
 | Dashboard | Область диагностики |
 |---|---|
 | `Kantano / API` | Request rate, HTTP statuses, latency, database pool, Redis cache и application logs |
 | `Kantano / Background and realtime` | Outbox backlog и age, publisher/worker health, Celery attempts, RabbitMQ queue и WebSocket activity |
 | `Kantano / Infrastructure and telemetry` | Scrape targets, host/container resources, dependencies, Alloy export и Grafana Cloud quota |
+| `Kantano Assistant` | Результаты запусков, LLM/tool calls, latency, fallback, токены и полнота usage |
 
 Dashboard variables фильтруют данные по `environment`; API dashboard дополнительно
 выбирает `job`. Нулевой outbox отображается отдельно от отсутствующей метрики, а age
 вычисляется только для положительного Unix timestamp. Shared gauges агрегируются в одну
 серию, чтобы количество backend-процессов не искажало backlog и heartbeat.
+
+Информационные stat-панели отображаются нейтрально. Для статусов закреплены цвета:
+успех — зелёный, ошибка — красный, retry/rate limit — оранжевый, остановка — серый.
+RAM, диск, heartbeat и доля 5xx используют явно заданные пороги состояния.
 
 ## Прикладные метрики
 
@@ -222,8 +249,9 @@ Dashboard variables фильтруют данные по `environment`; API dash
 | RabbitMQ | Aggregated `/metrics`, четыре используемые families и `up`; per-object metrics отключены. |
 | Alloy | Используемые `otelcol_exporter_*`, `prometheus_remote_storage_*`, `loki_write_*` и `up`. |
 
-`up` разрешён для девяти production jobs. Неиспользуемые families, `*_created`, histogram
-`*_sum` и `*_count` отбрасываются. HTTP histogram buckets не изменены.
+`up` разрешён для девяти production jobs. Неиспользуемые families и `*_created`
+отбрасываются. Histogram `*_sum` и `*_count` сохраняются для LLM latency и run tokens;
+у остальных гистограмм экспортируются используемые buckets.
 
 `grafanacloud_*` читаются из Grafana Cloud usage datasource и указаны в валидаторе как
 external exceptions; VPS их не отправляет.

@@ -79,6 +79,9 @@ class FakeBoardRepository:
     async def get_project_member(self, *, project_id: int, user_id: int):
         return SimpleNamespace(role=ProjectRole.OWNER)
 
+    async def lock_project(self, project_id: int) -> None:
+        return None
+
     async def get_max_column_position(self, project_id: int) -> float:
         return 0.0
 

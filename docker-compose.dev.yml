@@ -88,6 +88,8 @@ services:
     build:
       context: ./backend/light_task
       dockerfile: Dockerfile
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     command: uvicorn src.main:main_app --host ${LIGHTTASK_CONFIG__RUN__HOST:-0.0.0.0} --port ${LIGHTTASK_CONFIG__RUN__PORT:-8000} --reload
     volumes:
       - ./backend/light_task/src:/app/src
@@ -103,6 +105,10 @@ services:
       - LIGHTTASK_CONFIG__REALTIME__REDIS_URL=redis://redis:6379/0
       - LIGHTTASK_CONFIG__CACHE__REDIS_URL=redis://redis:6379/0
       - LIGHTTASK_CONFIG__QUEUE__HOST=rabbitmq
+      - LIGHTTASK_CONFIG__ASSISTANT__ENABLED=${LIGHTTASK_CONFIG__ASSISTANT__ENABLED:-true}
+      - LIGHTTASK_CONFIG__ASSISTANT__MODE=${LIGHTTASK_CONFIG__ASSISTANT__MODE:-local}
+      - LIGHTTASK_CONFIG__ASSISTANT__LOCAL_BASE_URL=${LIGHTTASK_CONFIG__ASSISTANT__LOCAL_BASE_URL:-http://host.docker.internal:1234/v1}
+      - LIGHTTASK_CONFIG__ASSISTANT__LOCAL_MODEL=${LIGHTTASK_CONFIG__ASSISTANT__LOCAL_MODEL:-google/gemma-4-e4b}
       - LIGHTTASK_SKIP_MIGRATIONS=1
     depends_on:
       local-storage-init:

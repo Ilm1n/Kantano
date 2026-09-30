@@ -15,6 +15,14 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 HTTP_DURATION_BUCKETS = (0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10)
 TASK_DURATION_BUCKETS = (0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60)
+LLM_DURATION_BUCKETS = (0.25, 0.5, 1, 2, 5, 10, 20, 30, 60, 120)
+RUN_TOKEN_BUCKETS = (500, 1000, 2500, 5000, 10000, 20000, 40000, 80000, 160000)
+
+
+def is_assistant_stream(handler: str) -> bool:
+    return "/assistant/conversations/" in handler and (
+        handler.endswith("/runs") or handler.endswith("/decision")
+    )
 
 
 class _InProgressMiddleware:
@@ -41,6 +49,44 @@ class ApplicationMetrics:
     registry: CollectorRegistry = field(default_factory=CollectorRegistry)
 
     def __post_init__(self) -> None:
+        self.assistant_runs = Counter(
+            "kantano_assistant_runs_total",
+            "Terminal assistant runs by status.",
+            ("status",),
+            registry=self.registry,
+        )
+        self.assistant_llm_calls = Counter(
+            "kantano_assistant_llm_calls_total",
+            "Individual LLM attempts and usage availability.",
+            ("provider", "model", "result", "fallback", "usage"),
+            registry=self.registry,
+        )
+        self.assistant_llm_duration = Histogram(
+            "kantano_assistant_llm_duration_seconds",
+            "Duration of individual LLM attempts.",
+            ("provider", "model"),
+            buckets=LLM_DURATION_BUCKETS,
+            registry=self.registry,
+        )
+        self.assistant_tool_calls = Counter(
+            "kantano_assistant_tool_calls_total",
+            "Executed assistant tools by result.",
+            ("tool", "result"),
+            registry=self.registry,
+        )
+        self.assistant_tokens = Counter(
+            "kantano_assistant_tokens_total",
+            "Provider-reported input and output tokens.",
+            ("provider", "model", "direction"),
+            registry=self.registry,
+        )
+        self.assistant_run_tokens = Histogram(
+            "kantano_assistant_run_tokens",
+            "Total tokens of fully accounted terminal runs.",
+            ("mode",),
+            buckets=RUN_TOKEN_BUCKETS,
+            registry=self.registry,
+        )
         self.outbox_unpublished = Gauge(
             "kantano_outbox_unpublished_events",
             "Current number of unpublished outbox events.",
@@ -155,7 +201,12 @@ class ApplicationMetrics:
         if request_counter is not None:
             instrumentator.add(request_counter)
         if latency is not None:
-            instrumentator.add(latency)
+
+            def ordinary_api_latency(info: metrics.Info) -> None:
+                if not is_assistant_stream(info.modified_handler):
+                    latency(info)
+
+            instrumentator.add(ordinary_api_latency)
         instrumentator.instrument(app).expose(app, include_in_schema=False)
         app.add_middleware(_InProgressMiddleware, gauge=self.http_requests_inprogress)
         self._instrumentator = instrumentator
@@ -245,6 +296,50 @@ def record_cache_operation(cache: str, operation: str, result: str) -> None:
             operation=operation,
             result=result,
         ).inc()
+
+
+def record_assistant_run(status: str) -> None:
+    if _active_metrics is not None:
+        _active_metrics.assistant_runs.labels(status=status).inc()
+
+
+def record_assistant_llm_call(
+    provider: str,
+    model: str,
+    result: str,
+    fallback: bool,
+    duration: float,
+    input_tokens: int | None = None,
+    output_tokens: int | None = None,
+) -> None:
+    if _active_metrics is None:
+        return
+    reported = input_tokens is not None and output_tokens is not None
+    _active_metrics.assistant_llm_calls.labels(
+        provider=provider,
+        model=model,
+        result=result,
+        fallback=str(fallback).lower(),
+        usage="reported" if reported else "missing",
+    ).inc()
+    _active_metrics.assistant_llm_duration.labels(provider=provider, model=model).observe(duration)
+    if input_tokens is not None and output_tokens is not None:
+        for direction, count in (("input", input_tokens), ("output", output_tokens)):
+            _active_metrics.assistant_tokens.labels(
+                provider=provider,
+                model=model,
+                direction=direction,
+            ).inc(count)
+
+
+def record_assistant_tool(tool: str, result: str) -> None:
+    if _active_metrics is not None:
+        _active_metrics.assistant_tool_calls.labels(tool=tool, result=result).inc()
+
+
+def record_assistant_run_tokens(mode: str, tokens: int) -> None:
+    if _active_metrics is not None:
+        _active_metrics.assistant_run_tokens.labels(mode=mode).observe(tokens)
 
 
 def metric_value(metric: Any, labels: dict[str, str] | None = None) -> float:

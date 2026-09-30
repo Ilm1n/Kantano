@@ -42,6 +42,15 @@ class ReorderColumnsCommand:
 
 
 @dataclass(frozen=True, kw_only=True)
+class MoveColumnCommand:
+    project_id: int
+    actor_user_id: int
+    column_id: int
+    before_column_id: int | None
+    client_mutation_id: str | None = None
+
+
+@dataclass(frozen=True, kw_only=True)
 class GetProjectBoardQuery:
     project_id: int
     actor_user_id: int
@@ -83,6 +92,7 @@ class MoveTaskCommand:
     new_column_id: int
     after_task_id: int | None = None
     client_mutation_id: str | None = None
+    project_id: int | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -91,7 +101,10 @@ class UpdateTaskCommand:
     actor_user_id: int
     changes: dict[str, Any]
     tag_ids: list[int] | None = None
+    add_tag_id: int | None = None
+    remove_tag_id: int | None = None
     client_mutation_id: str | None = None
+    project_id: int | None = None
 
 
 @dataclass(frozen=True, kw_only=True)

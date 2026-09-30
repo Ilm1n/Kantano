@@ -1,5 +1,6 @@
 import asyncio
 from logging.config import fileConfig
+from typing import Any
 
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
@@ -8,11 +9,13 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 from alembic import context
 
 # Модели
+from src.assistant.models import AssistantConversation, AssistantMessage, AssistantRun  # noqa: F401
 from src.boards.models import BoardColumn, Task  # noqa: F401
 from src.config import settings
 from src.db.base import Base
 from src.invitations.models import ProjectInvitation  # noqa: F401
 from src.projects.models import Project, ProjectMember  # noqa: F401
+from src.registration.models import OutboxEvent, PendingRegistration  # noqa: F401
 from src.tags.models import Tag  # noqa: F401
 from src.users.models import User  # noqa: F401
 
@@ -30,6 +33,20 @@ if config.config_file_name is not None:
 # from myapp import mymodel
 # target_metadata = mymodel.Base.metadata
 target_metadata = Base.metadata
+
+LANGGRAPH_TABLES = {
+    "checkpoints",
+    "checkpoint_blobs",
+    "checkpoint_writes",
+    "checkpoint_migrations",
+}
+
+
+def include_object(
+    object_: Any, name: str | None, type_: str, reflected: bool, compare_to: Any
+) -> bool:
+    # AsyncPostgresSaver.setup() owns this schema, not Alembic.
+    return not (type_ == "table" and name in LANGGRAPH_TABLES and reflected)
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:
@@ -54,6 +71,7 @@ def run_migrations_offline() -> None:
     context.configure(
         url=url,
         target_metadata=target_metadata,
+        include_object=include_object,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
     )
@@ -63,7 +81,10 @@ def run_migrations_offline() -> None:
 
 
 def do_run_migrations(connection: Connection) -> None:
-    context.configure(connection=connection, target_metadata=target_metadata)
+    context.configure(
+        connection=connection, target_metadata=target_metadata,
+        include_object=include_object,
+    )
 
     with context.begin_transaction():
         context.run_migrations()

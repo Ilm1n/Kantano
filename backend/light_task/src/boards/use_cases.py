@@ -13,6 +13,7 @@ from src.boards.dto import (
     GetProjectBoardQuery,
     GetTaskDetailsQuery,
     ListProjectTasksQuery,
+    MoveColumnCommand,
     MoveTaskCommand,
     ReorderColumnsCommand,
     UpdateColumnCommand,
@@ -350,6 +351,7 @@ class ReorderColumnsUseCase:
                     raise RuntimeError("UnitOfWork has not been entered")
 
                 repository = BoardRepository(uow.session)
+                await repository.lock_project(command.project_id)
                 actor_member = await repository.get_project_member(
                     project_id=command.project_id,
                     user_id=command.actor_user_id,
@@ -390,6 +392,59 @@ class ReorderColumnsUseCase:
                 command.project_id,
                 exc_info=exc,
             )
+            raise DatabaseError() from exc
+
+
+class MoveColumnUseCase:
+    def __init__(
+        self, uow_factory: Callable[[], UnitOfWork], permissions: BoardPermissions | None = None
+    ) -> None:
+        self._uow_factory = uow_factory
+        self._permissions = permissions or BoardPermissions()
+
+    async def execute(self, command: MoveColumnCommand) -> BoardColumn:
+        try:
+            async with self._uow_factory() as uow:
+                if uow.session is None:
+                    raise RuntimeError("UnitOfWork has not been entered")
+                repository = BoardRepository(uow.session)
+                await repository.lock_project(command.project_id)
+                member = await repository.get_project_member(
+                    project_id=command.project_id, user_id=command.actor_user_id
+                )
+                self._permissions.ensure_can_manage_columns(actor_member=member)
+                columns = await repository.list_columns_for_update(command.project_id)
+                column = next(
+                    (column for column in columns if column.id == command.column_id), None
+                )
+                if column is None:
+                    raise NotFoundError(ErrorCode.COLUMN_NOT_FOUND)
+                columns.remove(column)
+                if command.before_column_id is None:
+                    columns.append(column)
+                else:
+                    target = next((c for c in columns if c.id == command.before_column_id), None)
+                    if target is None:
+                        raise BadRequestError(ErrorCode.INVALID_TARGET_COLUMN)
+                    columns.insert(columns.index(target), column)
+                for index, item in enumerate(columns):
+                    item.position = (index + 1) * POSITION_GAP
+                    repository.save_column(item)
+                await repository.touch_project(command.project_id)
+                await repository.flush()
+                uow.collect_event(
+                    ColumnsReordered(
+                        column_ids=[c.id for c in columns],
+                        actor_user_id=command.actor_user_id,
+                        project_id=command.project_id,
+                        client_mutation_id=command.client_mutation_id,
+                    )
+                )
+                return column
+        except AppError:
+            raise
+        except Exception as exc:
+            board_logger.exception("Failed to move column %s", command.column_id, exc_info=exc)
             raise DatabaseError() from exc
 
 
@@ -506,6 +561,9 @@ class MoveTaskUseCase:
                 if task is None:
                     raise NotFoundError(ErrorCode.TASK_NOT_FOUND)
 
+                if command.project_id is not None and task.project_id != command.project_id:
+                    raise NotFoundError(ErrorCode.TASK_NOT_FOUND)
+
                 actor_member = await repository.get_project_member(
                     project_id=task.project_id,
                     user_id=command.actor_user_id,
@@ -596,6 +654,9 @@ class UpdateTaskUseCase:
                 if task is None:
                     raise NotFoundError(ErrorCode.TASK_NOT_FOUND)
 
+                if command.project_id is not None and task.project_id != command.project_id:
+                    raise NotFoundError(ErrorCode.TASK_NOT_FOUND)
+
                 actor_member = await repository.get_project_member(
                     project_id=task.project_id,
                     user_id=command.actor_user_id,
@@ -627,6 +688,22 @@ class UpdateTaskUseCase:
                     if len(tags) != len(command.tag_ids):
                         raise BadRequestError(ErrorCode.INVALID_TAG_IDS)
                     task.tags = list(tags)
+
+                if command.add_tag_id is not None or command.remove_tag_id is not None:
+                    tag_id = command.add_tag_id or command.remove_tag_id
+                    if tag_id is None:
+                        raise BadRequestError(ErrorCode.INVALID_TAG_IDS)
+                    tags = await repository.list_tags_by_ids(
+                        project_id=task.project_id,
+                        tag_ids=[tag_id],
+                    )
+                    if not tags:
+                        raise BadRequestError(ErrorCode.INVALID_TAG_IDS)
+                    if command.add_tag_id is not None:
+                        if all(tag.id != tag_id for tag in task.tags):
+                            task.tags.append(tags[0])
+                    else:
+                        task.tags = [tag for tag in task.tags if tag.id != tag_id]
 
                 for key, value in command.changes.items():
                     setattr(task, key, value)

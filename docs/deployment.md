@@ -27,6 +27,7 @@ Repository Secrets:
 - `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`;
 - `YANDEX_CLIENT_SECRET`;
 - `RESEND_API_KEY`;
+- `ASSISTANT_GOOGLE_API_KEY`, `ASSISTANT_GROQ_API_KEY`;
 - `RABBITMQ_PASSWORD`;
 - `SENTRY_DSN`;
 - `POSTGRES_MONITOR_PASSWORD`;
@@ -45,6 +46,7 @@ Repository Variables:
 - `YANDEX_CLIENT_ID`, `YANDEX_REDIRECT_URI`;
 - `RESEND_FROM_EMAIL=no-reply@kantano.ru`;
 - `RESEND_FROM_NAME=Kantano`;
+- `ASSISTANT_ENABLED=true`, `ASSISTANT_MODE=cloud`;
 - `GRAFANA_CLOUD_PROMETHEUS_URL`, `GRAFANA_CLOUD_PROMETHEUS_USER`;
 - `GRAFANA_CLOUD_LOKI_URL`, `GRAFANA_CLOUD_LOKI_USER`;
 - `GRAFANA_CLOUD_OTLP_ENDPOINT`, `GRAFANA_CLOUD_OTLP_USER`;
@@ -53,6 +55,17 @@ Repository Variables:
 
 `GITHUB_TOKEN` предоставляется Actions автоматически. Значения секретов не должны
 храниться в репозитории или попадать в логи.
+
+### ИИ-помощник
+
+Repository Variables: `ASSISTANT_ENABLED=true`, `ASSISTANT_MODE=cloud`.
+Repository Secrets: `ASSISTANT_GOOGLE_API_KEY`, `ASSISTANT_GROQ_API_KEY`.
+Достаточно одного ключа; оба включают полную [цепочку fallback](./development.md#ии-помощник).
+Workflow записывает настройки в `LIGHTTASK_CONFIG__ASSISTANT__*` в `.env.backend`
+при каждом деплое. Без переменных помощник выключен; режим по умолчанию — `cloud`.
+
+Режим `local` запрещён валидатором production-настроек. Сервис `migrations`
+применяет Alembic и официальный `AsyncPostgresSaver.setup()` до запуска API.
 
 ## Резервные копии PostgreSQL
 
