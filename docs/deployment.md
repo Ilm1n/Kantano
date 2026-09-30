@@ -27,6 +27,7 @@ Repository Secrets:
 - `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`;
 - `YANDEX_CLIENT_SECRET`;
 - `RESEND_API_KEY`;
+- `ASSISTANT_GOOGLE_API_KEY`, `ASSISTANT_GROQ_API_KEY`;
 - `RABBITMQ_PASSWORD`;
 - `SENTRY_DSN`;
 - `POSTGRES_MONITOR_PASSWORD`;
@@ -45,6 +46,7 @@ Repository Variables:
 - `YANDEX_CLIENT_ID`, `YANDEX_REDIRECT_URI`;
 - `RESEND_FROM_EMAIL=no-reply@kantano.ru`;
 - `RESEND_FROM_NAME=Kantano`;
+- `ASSISTANT_ENABLED=true`, `ASSISTANT_MODE=cloud`;
 - `GRAFANA_CLOUD_PROMETHEUS_URL`, `GRAFANA_CLOUD_PROMETHEUS_USER`;
 - `GRAFANA_CLOUD_LOKI_URL`, `GRAFANA_CLOUD_LOKI_USER`;
 - `GRAFANA_CLOUD_OTLP_ENDPOINT`, `GRAFANA_CLOUD_OTLP_USER`;
@@ -53,6 +55,20 @@ Repository Variables:
 
 `GITHUB_TOKEN` предоставляется Actions автоматически. Значения секретов не должны
 храниться в репозитории или попадать в логи.
+
+### Помощник
+
+Для включения помощника заполните Repository Variables `ASSISTANT_ENABLED=true`,
+`ASSISTANT_MODE=cloud` и Repository Secrets `ASSISTANT_GOOGLE_API_KEY`,
+`ASSISTANT_GROQ_API_KEY`. Достаточно хотя бы одного ключа; для полной цепочки fallback
+нужны оба. Workflow передаёт их в `LIGHTTASK_CONFIG__ASSISTANT__*` в `.env.backend`.
+Этот файл перезаписывается при каждом деплое, поэтому настройки задаются в GitHub.
+
+По умолчанию используются `gemini-3.1-flash-lite`, затем `gemma-4-26b-a4b-it`,
+затем Groq `openai/gpt-oss-20b`. Если переменные не заданы, помощник выключен,
+а режим остаётся `cloud`. LM Studio в production запрещён валидатором настроек.
+Alembic и официальный `AsyncPostgresSaver.setup()` выполняются сервисом migrations
+до старта API; вручную создавать таблицы не нужно.
 
 ## Резервные копии PostgreSQL
 

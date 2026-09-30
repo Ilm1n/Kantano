@@ -22,21 +22,32 @@ ID_FIELDS = {
 
 
 class PlanStep(BaseModel):
-    id: str = Field(pattern=r"^[a-zA-Z][a-zA-Z0-9_-]*$", max_length=40)
-    tool: WriteToolName
+    id: str = Field(
+        pattern=r"^[a-zA-Z][a-zA-Z0-9_-]*$",
+        max_length=40,
+        description="Unique step name in this plan, e.g. column or task1; used by later references",
+    )
+    tool: WriteToolName = Field(description="Name of the write tool to execute for this step")
     args: dict[str, Any] = Field(
-        description="Arguments of this write tool. Existing IDs are integers. To use an entity created by an earlier step, use $step_id.column_id, $step_id.task_id or $step_id.tag_id in the corresponding ID field (also inside tag_ids)."
+        description="Named tool's arguments. Existing IDs are integers; creations from earlier steps use $step_id.column_id, $step_id.task_id or $step_id.tag_id in compatible ID fields, including tag_ids."
     )
 
 
 class ExecutePlan(BaseModel):
-    """Propose a complete ordered plan of up to 10 changes for ONE user confirmation.
+    """Propose an ordered plan of up to 10 changes for one confirmation.
 
-    Use this for mixed or dependent changes, e.g. CreateColumn (id=column), then
-    CreateTask with column_id='$column.column_id'. No writes happen before approval.
+    Use for multiple or dependent changes. Example: CreateColumn (id=column), then
+    CreateTask with column_id='$column.column_id'. Existing IDs come from read tools.
+    Each step uses its named tool's schema. After approval, returns an actions list
+    with per-step results. On failure or stop, completed changes remain; later steps
+    are skipped. This is not an all-or-nothing transaction.
     """
 
-    steps: list[PlanStep] = Field(min_length=1, max_length=MAX_ACTIONS)
+    steps: list[PlanStep] = Field(
+        min_length=1,
+        max_length=MAX_ACTIONS,
+        description="All requested changes in execution order; references only target earlier creation steps",
+    )
 
 
 def validate_plan(

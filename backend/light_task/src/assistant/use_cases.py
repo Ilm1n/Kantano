@@ -28,6 +28,7 @@ from src.assistant.repository import AssistantRepository
 from src.assistant.schemas import ActionDisplay, ChatDetail, ConversationRead, MessageRead, RunRead
 from src.db.unit_of_work import UnitOfWork
 from src.errors import ErrorCode
+from src.observability.metrics import record_assistant_run
 from src.shared.errors import ConflictError, NotFoundError
 
 logger = logging.getLogger(__name__)
@@ -221,6 +222,7 @@ class StopRunUseCase:
         self._uow_factory = uow_factory
 
     async def execute(self, command: StopRunCommand) -> None:
+        cancelled = False
         async with self._uow_factory() as uow:
             repository = uow_repository(uow)
             await authorized_chat(repository, command, lock=True)
@@ -232,6 +234,9 @@ class StopRunUseCase:
                 # A finished SSE may already have produced an approval card.
                 if run.status == "pending":
                     await cancel_run(repository, RunExecution(run_id=run.id, scope=command), run)
+                    cancelled = True
+        if cancelled:
+            record_terminal_run(run)
 
 
 class AssistantRunLifecycle:
@@ -240,7 +245,9 @@ class AssistantRunLifecycle:
 
     async def interrupt(self, run_id: UUID | None = None) -> None:
         async with self._uow_factory() as uow:
-            await uow_repository(uow).interrupt_run(run_id)
+            runs = await uow_repository(uow).interrupt_run(run_id)
+        for run in runs:
+            record_terminal_run(run)
 
     async def stop_requested(self, run_id: UUID) -> bool:
         async with self._uow_factory() as uow:
@@ -252,7 +259,11 @@ class AssistantRunLifecycle:
             run = await repository.get_run(execution.run_id, for_update=True)
             if run is None:
                 raise NotFoundError(ErrorCode.ASSISTANT_RUN_NOT_FOUND)
-            return await cancel_run(repository, execution, run)
+            was_active = run.status in ACTIVE_RUN_STATUSES
+            text = await cancel_run(repository, execution, run)
+        if was_active:
+            record_terminal_run(run)
+        return text
 
     async def pending(
         self, execution: RunExecution, action: dict[str, Any], metadata: RunMetadata
@@ -260,12 +271,18 @@ class AssistantRunLifecycle:
         async with self._uow_factory() as uow:
             repository = uow_repository(uow)
             run = await repository.get_run(execution.run_id, for_update=True)
-            if run is not None and run.stop_requested:
+            cancelled = run is not None and run.stop_requested
+            was_active = run is not None and run.status in ACTIVE_RUN_STATUSES
+            if run is not None and cancelled:
                 await cancel_run(repository, execution, run)
-                return "cancelled"
-            await repository.update_run(
-                execution.run_id, status="pending", proposed_action=action, **asdict(metadata)
-            )
+            else:
+                await repository.update_run(
+                    execution.run_id, status="pending", proposed_action=action, **asdict(metadata)
+                )
+        if cancelled:
+            if run is not None and was_active:
+                record_terminal_run(run)
+            return "cancelled"
         return "pending"
 
     async def record_results(
@@ -298,29 +315,35 @@ class AssistantRunLifecycle:
         async with self._uow_factory() as uow:
             repository = uow_repository(uow)
             run = await repository.get_run(execution.run_id, for_update=True)
+            was_active = run is not None and run.status in ACTIVE_RUN_STATUSES
             if run is not None and run.stop_requested:
-                return "cancelled", await cancel_run(repository, execution, run)
-            message = await result_message(repository, execution)
-            message.content = content or results_summary(outcomes)
-            references = [*references, *action_references(outcomes)]
-            message.references = list(
-                {(ref["type"], ref["id"]): ref for ref in references}.values()
-            )[:30]
-            await repository.update_run(
-                execution.run_id,
-                status=status,
-                proposed_action=None,
-                result={"actions": outcomes} if outcomes else None,
-                **asdict(metadata),
-            )
-        return status, message.content
+                status = "cancelled"
+                text = await cancel_run(repository, execution, run)
+            else:
+                message = await result_message(repository, execution)
+                text = message.content = content or results_summary(outcomes)
+                references = [*references, *action_references(outcomes)]
+                message.references = list(
+                    {(ref["type"], ref["id"]): ref for ref in references}.values()
+                )[:30]
+                await repository.update_run(
+                    execution.run_id,
+                    status=status,
+                    proposed_action=None,
+                    result={"actions": outcomes} if outcomes else None,
+                    **asdict(metadata),
+                )
+        if run is not None and was_active:
+            record_terminal_run(run)
+        return status, text
 
     async def fail(self, execution: RunExecution) -> str:
         async with self._uow_factory() as uow:
             repository = uow_repository(uow)
-            run = await repository.get_run(execution.run_id)
+            run = await repository.get_run(execution.run_id, for_update=True)
             if run is None:
                 return "Не удалось выполнить запрос."
+            was_active = run.status in ACTIVE_RUN_STATUSES
             result = dict(run.result or {})
             if run.status == "executing":
                 run.status = "unknown"
@@ -343,7 +366,25 @@ class AssistantRunLifecycle:
                     references=[],
                 )
             )
+        if was_active:
+            record_terminal_run(run)
         return text
+
+
+def record_terminal_run(run: AssistantRun) -> None:
+    record_assistant_run(run.status)
+    logger.info(
+        "assistant_run_terminal",
+        extra={
+            "run_id": str(run.id),
+            "conversation_id": str(run.conversation_id),
+            "status": run.status,
+            "provider": run.provider,
+            "model": run.model,
+            "steps": run.step_count,
+            "fallback": run.fallback_used,
+        },
+    )
 
 
 async def result_message(

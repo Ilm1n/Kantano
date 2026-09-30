@@ -47,9 +47,11 @@ class AssistantStreamingResponse(StreamingResponse):
                     await self._on_disconnect(self.run_id)
                 except Exception as exc:
                     logger.error(
-                        "assistant_run_cleanup_failed run_id=%s error_type=%s",
-                        self.run_id,
-                        type(exc).__name__,
+                        "assistant_run_cleanup_failed",
+                        extra={
+                            "run_id": str(self.run_id),
+                            "error_type": type(exc).__name__,
+                        },
                     )
                 finally:
                     await self.stream.aclose()

@@ -147,15 +147,16 @@ class AssistantRepository:
             update(AssistantRun).where(AssistantRun.id == run_id).values(**values)
         )
 
-    async def interrupt_run(self, run_id: UUID | None = None) -> None:
+    async def interrupt_run(self, run_id: UUID | None = None) -> list[AssistantRun]:
         statement = update(AssistantRun).where(AssistantRun.status.in_(EXECUTING_RUN_STATUSES))
         if run_id is not None:
             statement = statement.where(AssistantRun.id == run_id)
-        await self.session.execute(
+        result = await self.session.scalars(
             statement.values(
                 status=case((AssistantRun.status == "executing", "unknown"), else_="interrupted")
-            )
+            ).returning(AssistantRun)
         )
+        return list(result.all())
 
     async def project_runs(self, project_id: int) -> list[AssistantRun]:
         statement = (

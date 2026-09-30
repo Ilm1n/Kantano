@@ -1,11 +1,13 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+import logging
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from src.assistant.dto import ProjectScope
 from src.assistant.queries import AssistantProjectQueries
 from src.assistant.tool_schemas import (
+    WRITE_TOOLS,
     AddTagToTask,
     CreateColumn,
     CreateTag,
@@ -34,8 +36,11 @@ from src.boards.use_cases import (
     UpdateTaskUseCase,
 )
 from src.db.unit_of_work import UnitOfWork
+from src.observability.metrics import record_assistant_tool
 from src.tags.dto import CreateTagCommand, UpdateTagCommand
 from src.tags.use_cases import CreateTagUseCase, UpdateTagUseCase
+
+logger = logging.getLogger(__name__)
 
 
 class AssistantTools:
@@ -53,12 +58,35 @@ class AssistantTools:
         self._tag_uow_factory = tag_uow_factory
 
     async def read(self, name: str, args: dict[str, Any]) -> dict[str, Any]:
-        return await self._queries.read(name, args)
+        return await self._record_call(name, lambda: self._queries.read(name, args))
+
+    async def _record_call(
+        self,
+        name: str,
+        call: Callable[[], Awaitable[dict[str, Any]]],
+    ) -> dict[str, Any]:
+        # Unknown model-generated names must not create arbitrary metric series.
+        tool = (
+            name
+            if name in WRITE_TOOLS | {"ProjectOverview", "SearchTasks", "GetTask"}
+            else "unknown"
+        )
+        result = "error"
+        try:
+            value = await call()
+            result = "success"
+            return value
+        finally:
+            record_assistant_tool(tool, result)
+            logger.info("assistant_tool_call", extra={"tool": tool, "result": result})
 
     async def describe_action(self, name: str, args: dict[str, Any]) -> dict[str, Any]:
         return await self._queries.describe_action(name, args)
 
     async def execute_write(self, name: str, args: dict[str, Any]) -> dict[str, Any]:
+        return await self._record_call(name, lambda: self._execute_write(name, args))
+
+    async def _execute_write(self, name: str, args: dict[str, Any]) -> dict[str, Any]:
         # The API must atomically claim pending -> executing before calling here.
         if name == "CreateColumn":
             data = CreateColumn.model_validate(args)

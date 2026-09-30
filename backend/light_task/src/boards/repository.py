@@ -47,12 +47,14 @@ class BoardRepository:
         assignee_id: int | None = None,
         tag_ids: list[int] | None = None,
         search: str | None = None,
+        limit: int | None = None,
+        offset: int = 0,
     ) -> list[Task]:
         stmt = (
             select(Task)
             .where(Task.project_id == project_id)
             .options(selectinload(Task.tags), selectinload(Task.assignee))
-            .order_by(Task.updated_at.desc())
+            .order_by(Task.updated_at.desc(), Task.id.desc())
         )
 
         if assignee_id:
@@ -68,6 +70,11 @@ class BoardRepository:
 
         if tag_ids:
             stmt = stmt.join(Task.tags).where(Tag.id.in_(tag_ids)).distinct()
+
+        if limit is not None:
+            stmt = stmt.limit(limit)
+        if offset:
+            stmt = stmt.offset(offset)
 
         return list((await self.session.execute(stmt)).scalars().all())
 

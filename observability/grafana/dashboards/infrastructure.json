@@ -38,7 +38,7 @@
         }
       ],
       "fieldConfig": {
-        "defaults": { "unit": "short", "decimals": 0, "noValue": "No targets" },
+        "defaults": {"unit": "short", "decimals": 0, "noValue": "No targets", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}},
         "overrides": [
           {
             "matcher": { "id": "byName", "options": "down" },
@@ -279,7 +279,7 @@
           "legendFormat": "dropped logs"
         }
       ],
-      "fieldConfig": { "defaults": { "unit": "eps", "min": 0 } }
+      "fieldConfig": {"defaults": {"unit": "eps", "min": 0, "color": {"mode": "fixed", "fixedColor": "blue"}}, "overrides": [{"matcher": {"id": "byRegexp", "options": "^failed spans$"}, "properties": [{"id": "color", "value": {"mode": "fixed", "fixedColor": "red"}}]}, {"matcher": {"id": "byRegexp", "options": "^failed samples$"}, "properties": [{"id": "color", "value": {"mode": "fixed", "fixedColor": "orange"}}]}, {"matcher": {"id": "byRegexp", "options": "^dropped logs$"}, "properties": [{"id": "color", "value": {"mode": "fixed", "fixedColor": "purple"}}]}]}
     },
     {
       "id": 9,

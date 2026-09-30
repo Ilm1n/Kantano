@@ -45,7 +45,9 @@ class CheckpointCleanup:
                         await repository.remove_checkpoint_cleanup(cleanup)
         except Exception as exc:
             # The committed queue survives failures, including a crash after deleting a thread.
-            logger.error("assistant_checkpoint_cleanup_failed error_type=%s", type(exc).__name__)
+            logger.error(
+                "assistant_checkpoint_cleanup_failed", extra={"error_type": type(exc).__name__}
+            )
 
     async def run(self) -> None:
         while True:

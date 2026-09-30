@@ -19,6 +19,8 @@ from src.assistant.dto import ProjectScope, RunExecution, RunMetadata
 from src.assistant.graph import AssistantState, RunStoppedError, build_graph
 from src.assistant.tools import AssistantTools
 from src.assistant.use_cases import AssistantRunLifecycle
+from src.config import settings
+from src.observability.metrics import record_assistant_run_tokens
 
 logger = logging.getLogger(__name__)
 StreamEvent = tuple[
@@ -81,11 +83,13 @@ class AssistantRuntime:
                 await self._lifecycle.record_results(execution, outcomes, executing)
             outcome = outcomes[-1]
             logger.info(
-                "assistant_action run_id=%s conversation_id=%s tool=%s result=%s",
-                run_id,
-                conversation_id,
-                outcome["tool"],
-                outcome["status"],
+                "assistant_action",
+                extra={
+                    "run_id": str(run_id),
+                    "conversation_id": str(conversation_id),
+                    "tool": outcome["tool"],
+                    "result": outcome["status"],
+                },
             )
 
         try:
@@ -152,28 +156,44 @@ class AssistantRuntime:
                         state.get("references", []),
                         run_metadata,
                     )
+                    if state.get("reported_usage_calls", 0) and not state.get(
+                        "missing_usage_calls", 0
+                    ):
+                        record_assistant_run_tokens(
+                            settings.assistant.mode,
+                            state.get("input_tokens", 0) + state.get("output_tokens", 0),
+                        )
                     yield (
                         "done",
                         {"status": final_status, "message": content, **asdict(run_metadata)},
                     )
                 logger.info(
-                    "assistant_run run_id=%s conversation_id=%s provider=%s model=%s "
-                    "steps=%s llm_duration_ms=%s fallback=%s status=%s total_ms=%s",
-                    run_id,
-                    conversation_id,
-                    run_metadata.provider,
-                    run_metadata.model,
-                    run_metadata.step_count,
-                    state.get("llm_duration_ms", 0),
-                    run_metadata.fallback_used,
-                    final_status,
-                    int((perf_counter() - start) * 1000),
+                    "assistant_run",
+                    extra={
+                        "run_id": str(run_id),
+                        "conversation_id": str(conversation_id),
+                        "provider": run_metadata.provider,
+                        "model": run_metadata.model,
+                        "steps": run_metadata.step_count,
+                        "llm_duration_ms": state.get("llm_duration_ms", 0),
+                        "fallback": run_metadata.fallback_used,
+                        "status": final_status,
+                        "segment_duration_ms": int((perf_counter() - start) * 1000),
+                        "input_tokens": state.get("input_tokens", 0),
+                        "output_tokens": state.get("output_tokens", 0),
+                        "reported_usage_calls": state.get("reported_usage_calls", 0),
+                        "missing_usage_calls": state.get("missing_usage_calls", 0),
+                    },
                 )
         except RunStoppedError:
             with anyio.fail_after(10, shield=True):
                 message = await self._lifecycle.cancel(execution)
             logger.info(
-                "assistant_run_stopped run_id=%s conversation_id=%s", run_id, conversation_id
+                "assistant_run_stopped",
+                extra={
+                    "run_id": str(run_id),
+                    "conversation_id": str(conversation_id),
+                },
             )
             yield "done", {"status": "cancelled", "message": message}
         except Exception as exc:
@@ -183,10 +203,12 @@ class AssistantRuntime:
             while cause.__cause__ is not None:
                 cause = cause.__cause__
             logger.error(
-                "assistant_run_failed run_id=%s conversation_id=%s error_type=%s cause_type=%s",
-                run_id,
-                conversation_id,
-                type(exc).__name__,
-                type(cause).__name__,
+                "assistant_run_failed",
+                extra={
+                    "run_id": str(run_id),
+                    "conversation_id": str(conversation_id),
+                    "error_type": type(exc).__name__,
+                    "cause_type": type(cause).__name__,
+                },
             )
             yield "error", {"message": message, "run_id": str(run_id)}

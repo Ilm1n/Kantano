@@ -12,6 +12,8 @@ from src.assistant.repository import AssistantRepository
 from src.assistant.tool_schemas import GetTask, SearchTasks
 from src.boards.repository import BoardRepository
 
+DESCRIPTION_PREVIEW_LENGTH = 300
+
 
 class AssistantProjectQueries:
     def __init__(self, session_factory: Callable[[], AsyncSession], scope: ProjectScope) -> None:
@@ -61,34 +63,65 @@ class AssistantProjectQueries:
                     search=query.search,
                     assignee_id=query.assignee_id,
                     tag_ids=[query.tag_id] if query.tag_id else None,
+                    limit=query.limit + 1,
+                    offset=query.offset,
                 )
+                columns = {c.id: c.name for c in await context.project_columns(self.project_id)}
+                has_more = len(tasks) > query.limit
                 return {
                     "tasks": [
                         {
                             "id": t.id,
                             "title": t.title,
                             "column_id": t.column_id,
+                            "column_name": columns.get(t.column_id),
                             "priority": t.priority.value if t.priority else None,
                             "assignee_id": t.assignee_id,
+                            "assignee_name": (t.assignee.full_name or t.assignee.username)
+                            if t.assignee
+                            else None,
+                            "deadline_at": t.deadline_at.isoformat() if t.deadline_at else None,
+                            "tags": [
+                                {"id": tag.id, "name": tag.name, "color": tag.color}
+                                for tag in t.tags
+                            ],
+                            "description_preview": (t.description or "")[
+                                :DESCRIPTION_PREVIEW_LENGTH
+                            ],
+                            "description_truncated": len(t.description or "")
+                            > DESCRIPTION_PREVIEW_LENGTH,
+                            "updated_at": t.updated_at.isoformat(),
                         }
-                        for t in tasks[:30]
+                        for t in tasks[: query.limit]
                     ],
-                    "truncated": len(tasks) > 30,
+                    "truncated": has_more,
+                    "next_offset": query.offset + query.limit if has_more else None,
                 }
             if name == "GetTask":
                 query = GetTask.model_validate(args)
                 task = await repository.get_task_with_tags(query.task_id)
                 if task is None or task.project_id != self.project_id:
                     raise ValueError("Task not found in this project")
+                members = await context.project_users(self.project_id) if task.assignee_id else []
+                assignee = next((m for m in members if m.id == task.assignee_id), None)
                 return {
                     "id": task.id,
                     "title": task.title,
                     "description": task.description,
                     "column_id": task.column_id,
+                    "column_name": await context.entity_label(
+                        "column", self.project_id, task.column_id
+                    ),
                     "priority": task.priority.value if task.priority else None,
                     "assignee_id": task.assignee_id,
+                    "assignee_name": (assignee.full_name or assignee.username)
+                    if assignee
+                    else None,
                     "deadline_at": task.deadline_at.isoformat() if task.deadline_at else None,
-                    "tags": [{"id": tag.id, "name": tag.name} for tag in task.tags],
+                    "tags": [
+                        {"id": tag.id, "name": tag.name, "color": tag.color} for tag in task.tags
+                    ],
+                    "updated_at": task.updated_at.isoformat(),
                 }
             raise ValueError("Unknown read tool")
 
