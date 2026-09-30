@@ -130,6 +130,7 @@ OpenAI-compatible сервер LM Studio на порту `1234` с модель�
 |---|---|
 | `ENABLED` | `true`; `false` отключает помощника |
 | `MODE` | `local`; `cloud` включает облачные адаптеры |
+| `CLOUD_PROVIDER` | `global`: Google/Groq; `ru`: GigaChat. Используется только при `MODE=cloud` |
 | `LOCAL_BASE_URL` | `http://host.docker.internal:1234/v1` из контейнера |
 | `LOCAL_MODEL` | `google/gemma-4-e4b` |
 | `LOCAL_API_KEY` | `lm-studio` |
@@ -143,6 +144,7 @@ OpenAI-compatible сервер LM Studio на порту `1234` с модель�
 ```dotenv
 LIGHTTASK_CONFIG__ASSISTANT__ENABLED=true
 LIGHTTASK_CONFIG__ASSISTANT__MODE=cloud
+LIGHTTASK_CONFIG__ASSISTANT__CLOUD_PROVIDER=global
 LIGHTTASK_CONFIG__ASSISTANT__GOOGLE_API_KEY=<google-api-key>
 LIGHTTASK_CONFIG__ASSISTANT__GROQ_API_KEY=<groq-api-key>
 ```
@@ -151,6 +153,28 @@ Fallback по умолчанию: Google `gemini-3.1-flash-lite` → `gemma-4-26
 Groq `openai/gpt-oss-20b`. Используются провайдеры с заданными ключами.
 Модели переопределяются через `PRIMARY_MODEL`, `GOOGLE_FALLBACK_MODEL`, `GROQ_MODEL`
 с тем же префиксом. Ключи хранятся в backend; production допускает только `cloud`.
+
+Для GigaChat вместо цепочки Google/Groq:
+
+```dotenv
+LIGHTTASK_CONFIG__ASSISTANT__ENABLED=true
+LIGHTTASK_CONFIG__ASSISTANT__MODE=cloud
+LIGHTTASK_CONFIG__ASSISTANT__CLOUD_PROVIDER=ru
+LIGHTTASK_CONFIG__ASSISTANT__GIGACHAT_CREDENTIALS=<ключ-авторизации>
+LIGHTTASK_CONFIG__ASSISTANT__GIGACHAT_MODEL=GigaChat-2
+```
+
+`langchain-gigachat` получает и обновляет OAuth-токен по ключу авторизации.
+Адаптер передаёт аргументы шагов `ExecutePlan` как JSON-строки и восстанавливает
+общий формат перед валидацией; API и порядок подтверждений не меняются.
+Корневой сертификат НУЦ включён в `backend/light_task/tls`; клиент добавляет его
+к стандартным доверенным CA только для своих соединений, с проверкой TLS.
+Путь переопределяется через `GIGACHAT_CA_BUNDLE_FILE`, scope — через `GIGACHAT_SCOPE`
+(по умолчанию `GIGACHAT_API_PERS`), с тем же префиксом.
+В режиме `ru` Google/Groq не вызываются. Лимит Freemium — один запрос одновременно:
+вызовы сериализуются в API-процессе; ожидание можно отменить кнопкой остановки.
+Текущий Docker-запуск использует один API worker. Для нескольких workers/реплик
+потребуется общее ограничение параллелизма либо тариф с большей квотой.
 
 После изменения `.env` пересоздайте backend:
 
