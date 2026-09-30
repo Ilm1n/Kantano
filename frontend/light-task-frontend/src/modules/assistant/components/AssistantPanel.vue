@@ -1,12 +1,14 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import { useRoute } from 'vue-router';
 import { useConfirm } from 'primevue/useconfirm';
 import MarkdownIt from 'markdown-it';
-import { useAssistantStore } from '../store/assistant.store';
+import { DEFAULT_PANEL_WIDTH, MIN_PANEL_WIDTH, useAssistantStore } from '../store/assistant.store';
 import { actionFields } from '../presentation';
 
 const store = useAssistantStore();
+const isResizing = ref(false);
+let resizeStart: { pointerId: number; x: number; width: number } | null = null;
 const route = useRoute();
 const canOpenProject = computed(() => store.projectId !== null && (route.name !== 'project-board' || Number(route.params.projectId) !== store.projectId));
 const confirm = useConfirm();
@@ -33,6 +35,37 @@ const actionSteps = computed(() => {
 });
 const canSend = computed(() => Boolean(store.draft.trim()) && !store.isLoading && !store.isStreaming && !store.isPending && !store.isBusy);
 
+function startResize(event: PointerEvent) {
+  if (event.button !== 0) return;
+  event.preventDefault();
+  (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+  resizeStart = { pointerId: event.pointerId, x: event.clientX, width: store.panelWidth };
+  isResizing.value = true;
+}
+
+function resize(event: PointerEvent) {
+  if (resizeStart?.pointerId !== event.pointerId) return;
+  store.setPanelWidth(resizeStart.width + resizeStart.x - event.clientX);
+}
+
+function endResize() {
+  resizeStart = null;
+  isResizing.value = false;
+}
+
+function onResizeKeydown(event: KeyboardEvent) {
+  const widths: Record<string, number> = {
+    ArrowLeft: store.panelWidth + 20,
+    ArrowRight: store.panelWidth - 20,
+    Home: MIN_PANEL_WIDTH,
+    End: store.maxPanelWidth,
+  };
+  const width = widths[event.key];
+  if (width === undefined) return;
+  event.preventDefault();
+  store.setPanelWidth(width);
+}
+
 function onComposerKeydown(event: KeyboardEvent) {
   if (event.key === 'Enter' && !event.shiftKey) {
     event.preventDefault();
@@ -56,9 +89,35 @@ function confirmDeleteChat() {
 
 <template>
   <aside
+    id="assistant-panel"
     aria-label="Помощник Kantano"
-    class="assistant-panel fixed inset-y-0 right-0 z-40 flex w-full flex-col border-l border-slate-200 bg-white shadow-2xl dark:border-dark-border dark:bg-dark-surface sm:w-[420px] xl:static xl:z-auto xl:shrink-0 xl:shadow-none"
+    :style="{ '--assistant-panel-width': `${store.panelWidth}px` }"
+    :class="{ 'select-none': isResizing }"
+    class="assistant-panel fixed inset-y-0 right-0 z-40 flex w-full flex-col border-l border-slate-200 bg-white shadow-2xl dark:border-dark-border dark:bg-dark-surface sm:w-[420px] xl:relative xl:z-auto xl:w-[var(--assistant-panel-width)] xl:shrink-0 xl:shadow-none"
   >
+    <div
+      v-if="store.isPanelResizable"
+      role="separator"
+      tabindex="0"
+      aria-label="Ширина панели помощника"
+      aria-orientation="vertical"
+      aria-controls="assistant-panel"
+      :aria-valuemin="MIN_PANEL_WIDTH"
+      :aria-valuemax="store.maxPanelWidth"
+      :aria-valuenow="store.panelWidth"
+      :aria-valuetext="`${store.panelWidth} пикселей`"
+      title="Потяните, чтобы изменить ширину. Двойной щелчок — сбросить."
+      class="group absolute inset-y-0 -left-1 z-[902] w-2 cursor-col-resize touch-none outline-none"
+      @pointerdown="startResize"
+      @pointermove="resize"
+      @pointerup="endResize"
+      @pointercancel="endResize"
+      @lostpointercapture="endResize"
+      @dblclick="store.resetPanelWidth()"
+      @keydown="onResizeKeydown"
+    >
+      <span class="absolute inset-y-0 left-[3px] w-0.5 group-hover:bg-primary-500 group-focus-visible:bg-primary-500" :class="{ 'bg-primary-500': isResizing }"></span>
+    </div>
     <header class="flex h-16 shrink-0 items-center justify-between border-b border-slate-200 px-4 dark:border-dark-border">
       <div class="flex min-w-0 items-center gap-3">
         <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-primary-50 text-primary-600 dark:bg-primary-500/10">
@@ -69,9 +128,14 @@ function confirmDeleteChat() {
           <p class="text-xs text-slate-500">Вопросы и действия по проекту</p>
         </div>
       </div>
-      <button type="button" aria-label="Закрыть помощника" class="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" @click="store.isOpen = false">
-        <i class="pi pi-times" aria-hidden="true"></i>
-      </button>
+      <div class="flex shrink-0 items-center gap-1">
+        <button v-if="store.isPanelResizable && store.panelWidth !== DEFAULT_PANEL_WIDTH" type="button" aria-label="Сбросить ширину" title="Сбросить ширину" class="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" @click="store.resetPanelWidth()">
+          <i class="pi pi-arrow-right-arrow-left" aria-hidden="true"></i>
+        </button>
+        <button type="button" aria-label="Закрыть помощника" class="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" @click="store.isOpen = false">
+          <i class="pi pi-times" aria-hidden="true"></i>
+        </button>
+      </div>
     </header>
 
     <div class="border-b border-slate-200 px-4 py-3 dark:border-dark-border">

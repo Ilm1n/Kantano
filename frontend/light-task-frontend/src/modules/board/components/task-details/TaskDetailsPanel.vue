@@ -3,7 +3,7 @@ import { nextTick, ref, watch } from 'vue';
 import { useEventListener } from '@vueuse/core';
 import Drawer from 'primevue/drawer';
 
-const props = defineProps<{ visible: boolean; besideAssistant: boolean }>();
+const props = defineProps<{ visible: boolean; besideAssistant: boolean; assistantWidth: number }>();
 const emit = defineEmits<{ 'update:visible': [value: boolean]; hide: [] }>();
 const panel = ref<HTMLElement | null>(null);
 const closeButton = ref<HTMLButtonElement | null>(null);
@@ -29,8 +29,8 @@ useEventListener(document, 'keydown', (event) => {
   <Teleport v-if="besideAssistant" to="body">
     <template v-if="visible">
       <!-- Keep the non-modal panel below PrimeVue dropdowns and calendars. -->
-      <div class="fixed inset-y-0 left-0 right-[420px] z-[900] bg-black/15" aria-hidden="true" @mousedown.self="close"></div>
-      <aside ref="panel" aria-label="Детали задачи" class="fixed inset-y-0 right-[420px] z-[901] flex w-[700px] flex-col border-l border-slate-200 bg-white shadow-xl dark:border-dark-border dark:bg-dark-surface">
+      <div :style="{ right: `${assistantWidth}px` }" class="fixed inset-y-0 left-0 z-[900] bg-black/15" aria-hidden="true" @mousedown.self="close"></div>
+      <aside ref="panel" :style="{ right: `${assistantWidth}px` }" aria-label="Детали задачи" class="fixed inset-y-0 z-[901] flex w-[700px] flex-col border-l border-slate-200 bg-white shadow-xl dark:border-dark-border dark:bg-dark-surface">
         <header class="flex shrink-0 items-center justify-between border-b border-gray-200 p-5 dark:border-dark-border">
           <slot name="header"></slot>
           <button ref="closeButton" type="button" aria-label="Закрыть детали задачи" class="rounded-lg p-2 text-slate-500 hover:bg-gray-100 dark:hover:bg-slate-800" @click="close">

@@ -414,6 +414,7 @@ onUnmounted(() => {
   <TaskDetailsPanel
     v-model:visible="isVisible"
     :beside-assistant="besideAssistant"
+    :assistant-width="assistantStore.panelWidth"
     @hide="onClose"
   >
     <template #header>

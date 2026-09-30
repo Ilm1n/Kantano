@@ -1,5 +1,6 @@
 import { computed, ref, watch } from 'vue';
 import { defineStore } from 'pinia';
+import { useWindowSize } from '@vueuse/core';
 import { getErrorMessage } from '@/utils/error';
 import { useProjectsStore } from '@/modules/projects/store/projects.store';
 import {
@@ -15,8 +16,17 @@ import {
   type StreamEvent,
 } from '../api';
 
+export const DEFAULT_PANEL_WIDTH = 420;
+export const MIN_PANEL_WIDTH = 360;
+const MAX_PANEL_WIDTH = 700;
+
 export const useAssistantStore = defineStore('assistant', () => {
   const projectsStore = useProjectsStore();
+  const { width: windowWidth } = useWindowSize();
+  const preferredPanelWidth = ref(DEFAULT_PANEL_WIDTH);
+  const isPanelResizable = computed(() => windowWidth.value >= 1280);
+  const maxPanelWidth = computed(() => Math.min(MAX_PANEL_WIDTH, Math.max(MIN_PANEL_WIDTH, Math.floor(windowWidth.value / 2))));
+  const panelWidth = computed(() => Math.min(preferredPanelWidth.value, maxPanelWidth.value));
   const isOpen = ref(false);
   const projectId = ref<number | null>(null);
   const conversationId = ref<string | null>(null);
@@ -70,6 +80,14 @@ export const useAssistantStore = defineStore('assistant', () => {
     }
     timer = setTimeout(refreshRun, 1500);
   });
+
+  function setPanelWidth(width: number) {
+    preferredPanelWidth.value = Math.round(Math.min(maxPanelWidth.value, Math.max(MIN_PANEL_WIDTH, width)));
+  }
+
+  function resetPanelWidth() {
+    preferredPanelWidth.value = DEFAULT_PANEL_WIDTH;
+  }
 
   async function ensureProjects() {
     if (!projectsStore.projects.length) await projectsStore.fetchProjects();
@@ -347,6 +365,7 @@ export const useAssistantStore = defineStore('assistant', () => {
     isStopping.value = false;
     isLoading.value = false;
     isOpen.value = false;
+    resetPanelWidth();
     projectId.value = null;
     conversationId.value = null;
     chatByProject.value = {};
@@ -359,6 +378,7 @@ export const useAssistantStore = defineStore('assistant', () => {
   }
 
   return {
+    panelWidth, maxPanelWidth, isPanelResizable, setPanelWidth, resetPanelWidth,
     isOpen, projectId, conversationId, projects: computed(() => projectsStore.projects),
     project, conversation, conversations, messages, latestRun, streamedText,
     isStreaming, isStopping, canStop, isLoading, isPending, isBusy, error, draft,
