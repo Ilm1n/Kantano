@@ -323,9 +323,17 @@ class AssistantRunLifecycle:
                 message = await result_message(repository, execution)
                 text = message.content = content or results_summary(outcomes)
                 references = [*references, *action_references(outcomes)]
-                message.references = list(
-                    {(ref["type"], ref["id"]): ref for ref in references}.values()
-                )[:30]
+                task_ids = list(dict.fromkeys(ref["id"] for ref in references))[:30]
+                titles = (
+                    await repository.task_titles(execution.scope.project_id, task_ids)
+                    if task_ids
+                    else {}
+                )
+                message.references = [
+                    {"type": "task", "id": task_id, "title": titles[task_id]}
+                    for task_id in task_ids
+                    if task_id in titles
+                ]
                 await repository.update_run(
                     execution.run_id,
                     status=status,

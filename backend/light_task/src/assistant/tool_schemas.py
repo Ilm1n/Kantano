@@ -54,6 +54,21 @@ class GetTask(BaseModel):
     task_id: int = Field(description="Existing task ID from SearchTasks in the current project")
 
 
+class SelectTaskReferences(BaseModel):
+    """Select clickable links only for tasks explicitly included in the final
+    answer as results of the user's request. Use IDs from the supplied candidates.
+    Tasks inspected during search are not answer results. For 'find one task',
+    select only the task named in the answer. Counts, general summaries, questions
+    and answers without specific matching tasks need an empty list. Return IDs in
+    answer order. Do not change or rewrite the answer.
+    """
+
+    task_ids: list[int] = Field(
+        max_length=30,
+        description="IDs of answer results only, in display order; not search candidates",
+    )
+
+
 class CreateTask(BaseModel):
     """Propose one new task in a column. Returns task_id and title after execution.
     For dependencies on a new column or tag, use creation steps in ExecutePlan.

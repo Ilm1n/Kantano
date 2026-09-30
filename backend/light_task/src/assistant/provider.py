@@ -93,7 +93,9 @@ def available_models() -> list[tuple[str, str, BaseChatModel]]:
     return models
 
 
-async def call_model(messages: list[BaseMessage], tools: list[type]) -> ModelAnswer:
+async def call_model(
+    messages: list[BaseMessage], tools: list[type], *, tool_choice: str | None = None
+) -> ModelAnswer:
     models = available_models()
     if not models:
         raise RuntimeError("Assistant has no configured model")
@@ -105,7 +107,12 @@ async def call_model(messages: list[BaseMessage], tools: list[type]) -> ModelAns
         usage: TokenUsage | None = None
         error_type: str | None = None
         try:
-            message = await model.bind_tools(tools).ainvoke(messages)
+            bound = (
+                model.bind_tools(tools, tool_choice=tool_choice)
+                if tool_choice is not None
+                else model.bind_tools(tools)
+            )
+            message = await bound.ainvoke(messages)
             usage = token_usage(message)
             return ModelAnswer(
                 message=message,

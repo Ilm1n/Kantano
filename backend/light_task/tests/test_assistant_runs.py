@@ -8,14 +8,20 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 from langchain_core.messages import AIMessage
-from test_create_task_slice import _create_column, _create_project, _register_and_login
+from test_create_task_slice import (
+    _create_column,
+    _create_project,
+    _create_task,
+    _register_and_login,
+)
 
 from src.assistant import graph as graph_module
 from src.assistant.checkpoints import setup_checkpointer
+from src.assistant.dto import ConversationScope, RunMetadata, StartRunCommand
 from src.assistant.models import AssistantConversation, AssistantRun
 from src.assistant.provider import ModelAnswer
 from src.assistant.tools import AssistantTools
-from src.assistant.use_cases import AssistantRunLifecycle
+from src.assistant.use_cases import AssistantRunLifecycle, StartRunUseCase
 from src.config import settings
 from src.db.database import db_helper
 from src.db.unit_of_work import UnitOfWork
@@ -32,6 +38,50 @@ def events(response: Any) -> list[tuple[str, dict[str, Any]]]:
             (lines[0].removeprefix("event: "), json.loads(lines[1].removeprefix("data: ")))
         )
     return result
+
+
+def test_final_references_use_current_titles_and_exclude_other_projects(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings.assistant, "enabled", True)
+    owner = _register_and_login(client, username="assistant_links", email="links@example.com")
+    headers = {"Authorization": f"Bearer {owner['token']}"}
+    project = _create_project(client, token=owner["token"], name="Links")
+    other = _create_project(client, token=owner["token"], name="Other")
+    tasks = []
+    for target in (project, other):
+        column = _create_column(client, token=owner["token"], project_id=target["id"])
+        response = _create_task(
+            client,
+            token=owner["token"],
+            project_id=target["id"],
+            column_id=column["id"],
+            title=target["name"],
+        )
+        assert response.status_code == 201
+        tasks.append(response.json())
+    base = f"/api/projects/{project['id']}/assistant/conversations"
+    chat = client.post(base, headers=headers, json={"title": "Links"})
+    scope = ConversationScope(
+        project_id=project["id"], user_id=owner["user"]["id"], conversation_id=chat.json()["id"]
+    )
+
+    async def exercise() -> None:
+        execution = await StartRunUseCase(UnitOfWork).execute(
+            StartRunCommand(**vars(scope), content="Find a task")
+        )
+        references = [
+            {"type": "task", "id": task["id"], "title": "Untrusted title"} for task in tasks
+        ]
+        await AssistantRunLifecycle(UnitOfWork).complete(
+            execution, "Found", [], [*references, references[0]], RunMetadata()
+        )
+
+    asyncio.run(exercise())
+    detail = client.get(f"{base}/{scope.conversation_id}", headers=headers).json()
+    assert detail["messages"][-1]["references"] == [
+        {"type": "task", "id": tasks[0]["id"], "title": "Links"}
+    ]
 
 
 @pytest.mark.parametrize("fail_summary", [False, True])

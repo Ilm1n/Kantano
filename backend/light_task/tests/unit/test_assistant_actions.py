@@ -39,6 +39,62 @@ def model_answer(message: AIMessage) -> ModelAnswer:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("selection", "expected_ids"),
+    [(None, []), ([], []), ([2], [2]), ([2, 1, 2], [2, 1]), ([999], [])],
+)
+async def test_only_selected_search_results_become_links(
+    monkeypatch: pytest.MonkeyPatch, selection: list[int] | None, expected_ids: list[int]
+) -> None:
+    class SearchTools(RecordingTools):
+        async def read(self, name: str, args: dict[str, Any]) -> dict[str, Any]:
+            assert name == "SearchTasks"
+            return {"tasks": [{"id": i, "title": f"Task {i}"} for i in (1, 2, 3)]}
+
+    answers = iter(
+        [
+            AIMessage(content="", tool_calls=[{"name": "SearchTasks", "id": "read", "args": {}}]),
+            AIMessage(content="Answer"),
+        ]
+    )
+
+    async def call_model(
+        messages: list[BaseMessage], schemas: list[type], **kwargs: Any
+    ) -> ModelAnswer:
+        if kwargs.get("tool_choice") == "required":
+            assert [schema.__name__ for schema in schemas] == ["SelectTaskReferences"]
+            if selection is None:
+                raise RuntimeError("Provider quota exhausted during reference selection")
+            return model_answer(
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": "SelectTaskReferences",
+                            "id": "links",
+                            "args": {"task_ids": selection or []},
+                        }
+                    ],
+                )
+            )
+        return model_answer(next(answers))
+
+    monkeypatch.setattr(graph_module, "call_model", call_model)
+    tools = SearchTools()
+    graph = graph_module.build_graph(InMemorySaver(), tools)
+    state = await graph.ainvoke(
+        {"messages": [HumanMessage(content="Find one task")]},
+        {"configurable": {"thread_id": str(uuid4())}},
+    )
+    assert [ref["id"] for ref in state["references"]] == expected_ids
+    assert tools.writes == []
+    assert state["messages"][-1].content == "Answer"
+    assert state["step_count"] == (2 if selection is None else 3)
+    if selection is None:
+        assert state["missing_usage_calls"] == 3
+
+
+@pytest.mark.asyncio
 async def test_four_writes_require_one_plan_approval(monkeypatch: pytest.MonkeyPatch) -> None:
     tools = RecordingTools()
     saved: list[list[dict[str, Any]]] = []
