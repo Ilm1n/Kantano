@@ -168,8 +168,13 @@ class CacheConfig(BaseModel):
 class AssistantConfig(BaseModel):
     enabled: bool = False
     mode: Literal["cloud", "local"] = "cloud"
+    cloud_provider: Literal["global", "ru"] = "global"
     google_api_key: str = ""
     groq_api_key: str = ""
+    gigachat_credentials: str = ""
+    gigachat_model: str = "GigaChat-2"
+    gigachat_scope: str = "GIGACHAT_API_PERS"
+    gigachat_ca_bundle_file: Path = BASE_DIR / "tls" / "russian_trusted_root_ca.pem"
     local_base_url: str = "http://host.docker.internal:1234/v1"
     local_model: str = "google/gemma-4-e4b"
     local_api_key: str = "lm-studio"
@@ -238,12 +243,14 @@ class Settings(BaseSettings):
             raise ValueError("Mailpit email provider is not allowed in production")
         if self.observability.environment == "production" and self.assistant.mode == "local":
             raise ValueError("Local assistant provider is not allowed in production")
-        if (
-            self.assistant.enabled
-            and self.assistant.mode == "cloud"
-            and not (self.assistant.google_api_key or self.assistant.groq_api_key)
-        ):
-            raise ValueError("At least one cloud assistant API key is required")
+        if self.assistant.enabled and self.assistant.mode == "cloud":
+            if self.assistant.cloud_provider == "ru":
+                if not self.assistant.gigachat_credentials:
+                    raise ValueError("GigaChat credentials are required")
+                if not self.assistant.gigachat_ca_bundle_file.is_file():
+                    raise ValueError("GigaChat CA bundle file does not exist")
+            elif not (self.assistant.google_api_key or self.assistant.groq_api_key):
+                raise ValueError("At least one cloud assistant API key is required")
         return self
 
 

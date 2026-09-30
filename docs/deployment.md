@@ -27,7 +27,7 @@ Repository Secrets:
 - `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`;
 - `YANDEX_CLIENT_SECRET`;
 - `RESEND_API_KEY`;
-- `ASSISTANT_GOOGLE_API_KEY`, `ASSISTANT_GROQ_API_KEY`;
+- `ASSISTANT_GOOGLE_API_KEY`, `ASSISTANT_GROQ_API_KEY` или `ASSISTANT_GIGACHAT_CREDENTIALS`;
 - `RABBITMQ_PASSWORD`;
 - `SENTRY_DSN`;
 - `POSTGRES_MONITOR_PASSWORD`;
@@ -47,6 +47,7 @@ Repository Variables:
 - `RESEND_FROM_EMAIL=no-reply@kantano.ru`;
 - `RESEND_FROM_NAME=Kantano`;
 - `ASSISTANT_ENABLED=true`, `ASSISTANT_MODE=cloud`;
+- `ASSISTANT_CLOUD_PROVIDER=global` или `ru`, опционально `ASSISTANT_GIGACHAT_MODEL`;
 - `GRAFANA_CLOUD_PROMETHEUS_URL`, `GRAFANA_CLOUD_PROMETHEUS_USER`;
 - `GRAFANA_CLOUD_LOKI_URL`, `GRAFANA_CLOUD_LOKI_USER`;
 - `GRAFANA_CLOUD_OTLP_ENDPOINT`, `GRAFANA_CLOUD_OTLP_USER`;
@@ -60,7 +61,12 @@ Repository Variables:
 
 Repository Variables: `ASSISTANT_ENABLED=true`, `ASSISTANT_MODE=cloud`.
 Repository Secrets: `ASSISTANT_GOOGLE_API_KEY`, `ASSISTANT_GROQ_API_KEY`.
-Достаточно одного ключа; оба включают полную [цепочку fallback](./development.md#ии-помощник).
+При `ASSISTANT_CLOUD_PROVIDER=global` достаточно одного ключа; оба включают полную
+[цепочку fallback](./development.md#ии-помощник).
+Для GigaChat задайте Variable `ASSISTANT_CLOUD_PROVIDER=ru`, Secret
+`ASSISTANT_GIGACHAT_CREDENTIALS` (ключ авторизации) и при необходимости Variable
+`ASSISTANT_GIGACHAT_MODEL` (по умолчанию `GigaChat-2`). Google/Groq в этом режиме
+не вызываются. Сертификат поставляется в backend-образе; ручная установка на VPS не нужна.
 Workflow записывает настройки в `LIGHTTASK_CONFIG__ASSISTANT__*` в `.env.backend`
 при каждом деплое. Без переменных помощник выключен; режим по умолчанию — `cloud`.
 
