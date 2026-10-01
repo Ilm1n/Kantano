@@ -84,9 +84,8 @@ def test_final_references_use_current_titles_and_exclude_other_projects(
     ]
 
 
-@pytest.mark.parametrize("fail_summary", [False, True])
 def test_plan_preserves_results_and_rejects_repeated_decisions(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch, fail_summary: bool
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(settings.assistant, "enabled", True)
     asyncio.run(setup_checkpointer())
@@ -104,7 +103,7 @@ def test_plan_preserves_results_and_rejects_repeated_decisions(
     assert tag_response.status_code == 201
     calls = 0
 
-    async def call_model(*args: Any) -> ModelAnswer:
+    async def call_model(*args: Any, **kwargs: Any) -> ModelAnswer:
         nonlocal calls
         calls += 1
         if calls == 1:
@@ -127,10 +126,8 @@ def test_plan_preserves_results_and_rejects_repeated_decisions(
                     for i in range(4)
                 ],
             )
-        elif fail_summary:
-            raise RuntimeError("Model unavailable after successful writes")
         else:
-            message = AIMessage(content="Finished")
+            raise AssertionError("Completed writes must not invoke a model for another proposal")
         return ModelAnswer(message, "test", "test", False, 0)
 
     monkeypatch.setattr(graph_module, "call_model", call_model)
@@ -158,10 +155,11 @@ def test_plan_preserves_results_and_rejects_repeated_decisions(
     run_events = events(
         client.post(decision_path, headers=headers, json={"approve": True, "action_id": action_id})
     )
-    assert any(name == "error" for name, _ in run_events) == fail_summary
+    assert not any(name == "error" for name, _ in run_events)
+    assert calls == 1
     detail = client.get(chat_path, headers=headers).json()
     run = detail["latestRun"]
-    assert run["status"] == ("failed" if fail_summary else "completed")
+    assert run["status"] == "completed"
     assert len(run["result"]["actions"]) == 4
     assert all(outcome["status"] == "completed" for outcome in run["result"]["actions"])
     board = client.get(f"/api/projects/{project['id']}/columns", headers=headers).json()
@@ -260,7 +258,7 @@ def test_mixed_dependent_plan_and_partial_results(
         ]
     )
 
-    async def call_model(*args: Any) -> ModelAnswer:
+    async def call_model(*args: Any, **kwargs: Any) -> ModelAnswer:
         return ModelAnswer(next(replies), "test", "test", False, 0)
 
     original_write = AssistantTools.execute_write

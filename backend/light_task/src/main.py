@@ -55,6 +55,7 @@ async def lifespan(app: FastAPI):
     cleanup = CheckpointCleanup(UnitOfWork)
     cache_backend = RedisCache(settings.cache)
     await cache_backend.start()
+    app.state.cache_backend = cache_backend
     app.state.project_read_cache = ProjectReadCache(cache_backend, settings.cache)
     app.state.realtime_runtime = build_realtime_runtime()
     await app.state.realtime_runtime.start()

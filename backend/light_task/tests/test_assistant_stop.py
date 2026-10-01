@@ -40,7 +40,7 @@ def test_stop_cancels_llm_without_an_assistant_message(
         entered = asyncio.Event()
         cancelled = asyncio.Event()
 
-        async def call_model(*args: Any) -> ModelAnswer:
+        async def call_model(*args: Any, **kwargs: Any) -> ModelAnswer:
             entered.set()
             try:
                 await asyncio.sleep(30)
@@ -117,7 +117,7 @@ def test_stop_finishes_started_write_and_does_not_start_next_step(
         monkeypatch.setattr(AssistantTools, "execute_write", blocked_write)
         llm_calls = 0
 
-        async def call_model(*args: Any) -> ModelAnswer:
+        async def call_model(*args: Any, **kwargs: Any) -> ModelAnswer:
             nonlocal llm_calls
             llm_calls += 1
             assert llm_calls == 1, "Stopping must not call the model for a summary"

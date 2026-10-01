@@ -494,6 +494,8 @@ def action_references(outcomes: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def results_summary(outcomes: list[dict[str, Any]]) -> str:
+    if outcomes and all(outcome["status"] == "rejected" for outcome in outcomes):
+        return "План отклонён. Изменения не внесены."
     if len(outcomes) == 1:
         return action_summary(outcomes[0])
     completed = sum(outcome["status"] == "completed" for outcome in outcomes)

@@ -18,6 +18,7 @@ from src.assistant.use_cases import (
     StopRunUseCase,
 )
 from src.boards.events import BoardsDomainEventDispatcher
+from src.cache.redis import RedisCache, get_redis_cache
 from src.config import settings
 from src.db.database import db_helper
 from src.db.unit_of_work import UnitOfWork
@@ -82,8 +83,10 @@ def make_assistant_tools(
 def get_assistant_runtime(
     publisher: Annotated[DomainEventPublisher, Depends(get_event_publisher)],
     cache: Annotated[ProjectReadCache, Depends(get_project_read_cache)],
+    quota_cache: Annotated[RedisCache, Depends(get_redis_cache)],
 ) -> AssistantRuntime:
     return AssistantRuntime(
         lambda scope: make_assistant_tools(scope, publisher, cache),
         AssistantRunLifecycle(UnitOfWork),
+        quota_cache=quota_cache,
     )

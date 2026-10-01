@@ -105,7 +105,7 @@ def test_approval_resume_counts_one_run_and_combines_usage(
         counts = [sample.value for sample in histogram.samples if sample.name.endswith("_count")]
         sums = [sample.value for sample in histogram.samples if sample.name.endswith("_sum")]
         assert counts == ([] if missing else [1])
-        assert sums == ([] if missing else [35])
+        assert sums == ([] if missing else [12])
         assert not metrics.assistant_tool_calls.collect()[0].samples
         await AssistantRunLifecycle(UnitOfWork).interrupt(execution.run_id)
         assert (

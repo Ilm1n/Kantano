@@ -12,6 +12,7 @@ from pydantic import ValidationError
 from src.assistant import graph as graph_module
 from src.assistant.provider import ModelAnswer
 from src.assistant.tool_schemas import CreateTask, UpdateTask, validate_write
+from src.assistant.use_cases import results_summary
 from src.errors import ErrorCode
 from src.shared.errors import BadRequestError
 
@@ -19,6 +20,9 @@ pytestmark = pytest.mark.no_infra
 
 
 class RecordingTools:
+    user_id = 7
+    project_id = 11
+
     def __init__(self) -> None:
         self.writes: list[dict[str, Any]] = []
 
@@ -347,7 +351,7 @@ async def test_dependent_plan_resolves_results_and_stops_after_known_failure(
 
 
 @pytest.mark.asyncio
-async def test_new_action_outside_approved_plan_needs_new_approval(
+async def test_execution_finishes_without_another_model_call(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     tools = RecordingTools()
@@ -376,14 +380,12 @@ async def test_new_action_outside_approved_plan_needs_new_approval(
     graph = graph_module.build_graph(InMemorySaver(), tools)
     config = {"configurable": {"thread_id": str(uuid4())}}
     await graph.ainvoke({"messages": [HumanMessage(content="Create tasks")]}, config)
-    first_id = (await graph.aget_state(config)).values["proposed_action"]["action_id"]
     await graph.ainvoke(Command(resume=True), config)
     snapshot = await graph.aget_state(config)
-    assert snapshot.values["proposed_action"]["action_id"] != first_id
+    assert snapshot.values["proposed_action"] is None
     assert len(tools.writes) == 1
-    assert any(task.interrupts for task in snapshot.tasks)
-    await graph.ainvoke(Command(resume=True), config)
-    assert len(tools.writes) == 2
+    assert not snapshot.next
+    assert next(replies).tool_calls[0]["id"] == "second"
 
 
 @pytest.mark.asyncio
@@ -427,3 +429,111 @@ async def test_multiple_plans_in_one_reply_keep_dependencies_local(
     await graph.ainvoke(Command(resume=True), config)
     assert tools.writes[1]["column_id"] == 101
     assert tools.writes[3]["column_id"] == 103
+
+
+@pytest.mark.asyncio
+async def test_context_and_fallback_selection_survive_checkpoint_restore(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tools = RecordingTools()
+    calls = 0
+
+    async def call_model(
+        messages: list[BaseMessage], schemas: list[Any], **kwargs: Any
+    ) -> ModelAnswer:
+        nonlocal calls
+        calls += 1
+        assert "user_id=7" in messages[0].content and "project_id=11" in messages[0].content
+        assert [
+            schema["function"]["name"] if isinstance(schema, dict) else schema.__name__
+            for schema in schemas
+        ] == [
+            "ProjectOverview",
+            "SearchTasks",
+            "GetTask",
+            "ExecutePlan",
+        ]
+        if calls == 1:
+            assert "preferred_model" not in kwargs
+            return ModelAnswer(
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": "ProjectOverview",
+                            "args": {},
+                            "id": "read",
+                        }
+                    ],
+                ),
+                "gigachat",
+                "max",
+                True,
+                1,
+            )
+        assert kwargs["preferred_model"] == "max"
+        return ModelAnswer(AIMessage(content="Read answer"), "gigachat", "max", True, 1)
+
+    async def read(name: str, args: dict[str, Any]) -> dict[str, Any]:
+        return {"columns": []}
+
+    monkeypatch.setattr(tools, "read", read, raising=False)
+    monkeypatch.setattr(graph_module, "call_model", call_model)
+    saver = InMemorySaver()
+    config = {"configurable": {"thread_id": str(uuid4())}}
+    graph = graph_module.build_graph(saver, tools)
+    # Persist a completed read node, then reconstruct the graph as on restart.
+    await graph.ainvoke(
+        {
+            "messages": [HumanMessage(content="Read board")],
+        },
+        config,
+        interrupt_after=["tools"],
+    )
+    graph = graph_module.build_graph(saver, tools)
+    state = await graph.ainvoke(None, config)
+    assert calls == 2 and state["model"] == "max" and state["fallback_used"]
+    assert not tools.writes
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("approve", [False, True])
+async def test_legacy_pending_single_action_can_be_resumed(
+    monkeypatch: pytest.MonkeyPatch, approve: bool
+) -> None:
+    tools = RecordingTools()
+
+    async def call_model(*args: Any) -> ModelAnswer:
+        return model_answer(
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "CreateColumn",
+                        "args": {"name": "Legacy"},
+                        "id": "column",
+                    }
+                ],
+            )
+        )
+
+    monkeypatch.setattr(graph_module, "call_model", call_model)
+    saver = InMemorySaver()
+    config = {"configurable": {"thread_id": str(uuid4())}}
+    graph = graph_module.build_graph(saver, tools)
+    await graph.ainvoke({"messages": [HumanMessage(content="Create column")]}, config)
+    proposal = (await graph.aget_state(config)).values["proposed_action"]
+    # Emulate the pre-upgrade checkpoint shape, which had a standalone write.
+    old_proposal = {**proposal, "name": "CreateColumn", "args": {"name": "Legacy"}}
+    old_proposal.pop("calls", None)
+    await graph.aupdate_state(config, {"proposed_action": old_proposal}, as_node="tools")
+    graph = graph_module.build_graph(saver, tools)
+    await graph.ainvoke(None, config)
+    state = await graph.ainvoke(Command(resume=approve), config)
+    assert len(tools.writes) == int(approve)
+    assert state["action_results"][0]["status"] == ("completed" if approve else "rejected")
+    assert not (await graph.aget_state(config)).next
+
+
+def test_rejected_plan_has_one_readable_summary() -> None:
+    assert results_summary([{"status": "rejected"}] * 3) == "План отклонён. Изменения не внесены."

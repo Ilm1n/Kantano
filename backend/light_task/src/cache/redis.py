@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 import redis.asyncio as redis
+from fastapi import Request
 from redis.exceptions import RedisError
 
 from src.config import CacheConfig
@@ -124,3 +125,10 @@ class RedisCache:
             logger.warning("Redis cache client close failed")
         finally:
             self._client = None
+
+
+def get_redis_cache(request: Request) -> RedisCache:
+    cache = getattr(request.app.state, "cache_backend", None)
+    if not isinstance(cache, RedisCache):
+        raise RuntimeError("Redis cache is not initialized")
+    return cache
