@@ -208,6 +208,90 @@ def test_disconnect_cleanup_only_finishes_active_runs(client: TestClient) -> Non
     asyncio.run(exercise())
 
 
+def test_removed_plan_target_prevents_all_writes_and_releases_chat(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings.assistant, "enabled", True)
+    asyncio.run(setup_checkpointer())
+    owner = _register_and_login(client, username="stale_plan", email="stale_plan@example.com")
+    headers = {"Authorization": f"Bearer {owner['token']}"}
+    project = _create_project(client, token=owner["token"], name="Stale plan")
+    column = _create_column(client, token=owner["token"], project_id=project["id"])
+    task = _create_task(
+        client,
+        token=owner["token"],
+        project_id=project["id"],
+        column_id=column["id"],
+        title="Old task",
+    ).json()
+    calls = 0
+
+    async def call_model(*args: Any, **kwargs: Any) -> ModelAnswer:
+        nonlocal calls
+        calls += 1
+        if calls > 1:
+            return ModelAnswer(AIMessage(content="Chat is available"), "test", "test", False, 0)
+        return ModelAnswer(
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "ExecutePlan",
+                        "id": "plan",
+                        "args": {
+                            "steps": [
+                                {
+                                    "id": "create",
+                                    "tool": "CreateTask",
+                                    "args": {"title": "New task", "column_id": column["id"]},
+                                },
+                                {
+                                    "id": "move",
+                                    "tool": "MoveTask",
+                                    "args": {"task_id": task["id"], "new_column_id": column["id"]},
+                                },
+                            ]
+                        },
+                    }
+                ],
+            ),
+            "test",
+            "test",
+            False,
+            0,
+        )
+
+    monkeypatch.setattr(graph_module, "call_model", call_model)
+    base = f"/api/projects/{project['id']}/assistant/conversations"
+    chat = client.post(base, headers=headers, json={"title": "Stale"}).json()
+    path = f"{base}/{chat['id']}"
+    run_events = events(
+        client.post(f"{path}/runs", headers=headers, json={"content": "Create and move"})
+    )
+    run_id = next(data["run_id"] for name, data in run_events if name == "run")
+    assert client.delete(f"/api/tasks/{task['id']}", headers=headers).status_code == 204
+    # Reloading the chat must still expose the original approval card.
+    detail = client.get(path, headers=headers)
+    assert detail.status_code == 200
+    action_id = detail.json()["latestRun"]["proposedAction"]["action_id"]
+    decision = events(
+        client.post(
+            f"{path}/runs/{run_id}/decision",
+            headers=headers,
+            json={"action_id": action_id, "approve": True},
+        )
+    )
+    assert not any(name == "error" for name, _ in decision)
+    detail = client.get(path, headers=headers).json()
+    assert detail["latestRun"]["status"] == "failed"
+    assert [r["status"] for r in detail["latestRun"]["result"]["actions"]] == ["skipped", "failed"]
+    assert "Old task" in detail["messages"][-1]["content"]
+    assert client.get(f"/api/projects/{project['id']}/tasks", headers=headers).json() == []
+    events(client.post(f"{path}/runs", headers=headers, json={"content": "Continue"}))
+    assert client.get(path, headers=headers).json()["latestRun"]["status"] == "completed"
+
+
 @pytest.mark.parametrize("failure", [None, "known", "unknown"])
 def test_mixed_dependent_plan_and_partial_results(
     client: TestClient, monkeypatch: pytest.MonkeyPatch, failure: str | None

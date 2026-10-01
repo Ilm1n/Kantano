@@ -15,6 +15,12 @@ from src.boards.repository import BoardRepository
 DESCRIPTION_PREVIEW_LENGTH = 300
 
 
+class ActionObjectUnavailableError(ValueError):
+    def __init__(self, message: str, *, step_id: str | None = None) -> None:
+        super().__init__(message)
+        self.step_id = step_id
+
+
 class AssistantProjectQueries:
     def __init__(self, session_factory: Callable[[], AsyncSession], scope: ProjectScope) -> None:
         self._session_factory = session_factory
@@ -125,7 +131,9 @@ class AssistantProjectQueries:
                 }
             raise ValueError("Unknown read tool")
 
-    async def describe_action(self, name: str, args: dict[str, Any]) -> dict[str, Any]:
+    async def describe_action(
+        self, name: str, args: dict[str, Any], *, validate: bool = True
+    ) -> dict[str, Any]:
         if name == "ExecutePlan":
             steps = []
             planned: dict[str, str] = {}
@@ -138,7 +146,11 @@ class AssistantProjectQueries:
                     if any(isinstance(item, str) and REFERENCE.fullmatch(item) for item in items):
                         deferred[field] = value
                         fields.pop(field)
-                display = await self.describe_action(step["tool"], fields)
+                try:
+                    display = await self.describe_action(step["tool"], fields, validate=validate)
+                except ActionObjectUnavailableError as exc:
+                    exc.step_id = step["id"]
+                    raise
                 for field, value in deferred.items():
                     items = value if isinstance(value, list) else [value]
                     labels = []
@@ -147,9 +159,15 @@ class AssistantProjectQueries:
                         if match:
                             labels.append(planned[match[1]])
                         else:
-                            resolved = await self.describe_action(
-                                step["tool"], {field: [item] if isinstance(value, list) else item}
-                            )
+                            try:
+                                resolved = await self.describe_action(
+                                    step["tool"],
+                                    {field: [item] if isinstance(value, list) else item},
+                                    validate=validate,
+                                )
+                            except ActionObjectUnavailableError as exc:
+                                exc.step_id = step["id"]
+                                raise
                             label = resolved[field]
                             labels.extend(label if isinstance(label, list) else [label])
                     display[field] = labels if isinstance(value, list) else labels[0]
@@ -165,7 +183,7 @@ class AssistantProjectQueries:
             if not await repository.project_member_exists(
                 project_id=self.project_id, user_id=self.user_id
             ):
-                raise ValueError("Project access is no longer available")
+                raise ActionObjectUnavailableError("Доступ к выбранному проекту больше недоступен.")
             entity_fields: dict[str, Literal["task", "column", "tag"]] = {
                 "task_id": "task",
                 "column_id": "column",
@@ -177,15 +195,28 @@ class AssistantProjectQueries:
                 value = args.get(field)
                 if value is not None:
                     label = await context.entity_label(kind, self.project_id, value)
+                    if label is None and validate:
+                        labels = {
+                            "task": "Задача не найдена",
+                            "column": "Колонка не найдена",
+                            "tag": "Тег не найден",
+                        }
+                        raise ActionObjectUnavailableError(f"{labels[kind]} в выбранном проекте.")
                     display[field] = label or "Не найдено в проекте"
             if args.get("assignee_id") is not None:
                 members = await context.project_users(self.project_id)
                 member = next((user for user in members if user.id == args["assignee_id"]), None)
+                if member is None and validate:
+                    raise ActionObjectUnavailableError(
+                        "Исполнитель не является участником проекта."
+                    )
                 display["assignee_id"] = (
                     (member.full_name or member.username) if member else "Не найден в проекте"
                 )
             if args.get("tag_ids"):
                 tags = {tag.id: tag.name for tag in await context.project_tags(self.project_id)}
+                if validate and any(tag_id not in tags for tag_id in args["tag_ids"]):
+                    raise ActionObjectUnavailableError("Теги не найдены в выбранном проекте.")
                 display["tag_ids"] = [
                     tags.get(tag_id, "Не найден в проекте") for tag_id in args["tag_ids"]
                 ]

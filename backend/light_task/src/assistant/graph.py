@@ -19,6 +19,7 @@ from typing_extensions import TypedDict
 
 from src.assistant.plans import ID_FIELDS, MAX_ACTIONS, resolve_step
 from src.assistant.provider import ModelAnswer, call_model
+from src.assistant.queries import ActionObjectUnavailableError
 from src.assistant.tool_schemas import (
     TOOL_SCHEMAS,
     WRITE_TOOLS,
@@ -267,6 +268,7 @@ def build_graph(
             raise RuntimeError("Expected an assistant tool call")
         responses: list[ToolMessage] = []
         proposals: list[dict[str, Any]] = []
+        invalid_proposal = False
         action_count = len(state.get("action_results", []))
         candidates = {ref["id"]: ref for ref in state.get("reference_candidates", [])}
         for call in last.tool_calls:
@@ -279,7 +281,19 @@ def build_graph(
                     if action_count + count > MAX_ACTIONS:
                         raise ValueError("Достигнут лимит 10 действий за запрос.")
                     display = await tools.describe_action(name, validated)
+                except ActionObjectUnavailableError as exc:
+                    invalid_proposal = True
+                    responses.append(
+                        ToolMessage(
+                            content=f"План не принят: {exc} Прочитай актуальные данные выбранного "
+                            "проекта и исправь весь план. Не угадывай ID. Если цель неоднозначна, "
+                            "уточни её у пользователя. Изменения не выполнены.",
+                            tool_call_id=call["id"],
+                        )
+                    )
+                    continue
                 except (ValidationError, ValueError) as exc:
+                    invalid_proposal = True
                     responses.append(
                         ToolMessage(
                             content=f"Некорректные аргументы: {exc}. Исправь их по схеме инструмента.",
@@ -317,6 +331,16 @@ def build_graph(
             except (ValueError, KeyError) as exc:
                 content = f"Ошибка инструмента: {exc}"
             responses.append(ToolMessage(content=content, tool_call_id=call["id"]))
+        if invalid_proposal:
+            responses.extend(
+                ToolMessage(
+                    content="План не принят: другой вызов изменений содержит ошибку. "
+                    "Исправь весь план. Изменения не выполнены.",
+                    tool_call_id=proposal["tool_call_id"],
+                )
+                for proposal in proposals
+            )
+            proposals = []
         if proposals and (len(proposals) > 1 or proposals[0]["name"] != "ExecutePlan"):
             steps = []
             calls = []
@@ -394,12 +418,34 @@ def build_graph(
         outcomes = list(state.get("action_results", []))
         plan_outcomes: list[dict[str, Any]] = []
         results: dict[str, dict[str, Any]] = {}
+        preflight_error: ActionObjectUnavailableError | None = None
+        if approved:
+            await check_stop()
+            try:
+                await tools.describe_action(proposal["name"], proposal["args"])
+            except ActionObjectUnavailableError as exc:
+                preflight_error = exc
+        display_steps = (
+            (proposal.get("display") or {}).get("steps", [])
+            if proposal["name"] == "ExecutePlan"
+            else [{"display": proposal.get("display") or {}}]
+        )
         stopped = False
         for index, step in enumerate(steps):
             await check_stop()
             result: dict[str, Any]
             if not approved:
                 result = {"status": "rejected"}
+            elif preflight_error is not None:
+                failed_step = preflight_error.step_id or steps[0]["id"]
+                result = (
+                    {"status": "failed", "error": str(preflight_error)}
+                    if step["id"] == failed_step
+                    else {
+                        "status": "skipped",
+                        "error": "План не запущен из-за недоступного объекта.",
+                    }
+                )
             elif stopped:
                 result = {"status": "skipped"}
             else:
@@ -411,13 +457,35 @@ def build_graph(
                 "step_id": step["id"],
                 "tool": step["tool"],
             }
+            if outcome["status"] in {"failed", "skipped"}:
+                display = (
+                    display_steps[index].get("display", {}) if index < len(display_steps) else {}
+                )
+                outcome["context"] = {
+                    "args": {
+                        key: step["args"][key]
+                        for key in ("title", "name", "new_name")
+                        if key in step["args"]
+                    },
+                    "display": {
+                        key: display[key]
+                        for key in ("task_id", "column_id", "tag_id")
+                        if key in display
+                    },
+                }
             outcomes.append(outcome)
             plan_outcomes.append(outcome)
             results[step["id"]] = result
             stopped = stopped or outcome["status"] == "failed"
             if on_action_result is not None:
                 await on_action_result(
-                    outcomes, bool(approved and index < len(steps) - 1 and not stopped)
+                    outcomes,
+                    bool(
+                        approved
+                        and preflight_error is None
+                        and index < len(steps) - 1
+                        and not stopped
+                    ),
                 )
         await check_stop()
         calls = proposal.get(

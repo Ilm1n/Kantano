@@ -125,7 +125,7 @@ class GetConversationUseCase:
             if proposal.display is None:
                 queries = AssistantProjectQueries(self._session_factory, scope)
                 proposal.display = ActionDisplay.model_validate(
-                    await queries.describe_action(proposal.name, proposal.args)
+                    await queries.describe_action(proposal.name, proposal.args, validate=False)
                 )
         return result
 
@@ -459,9 +459,19 @@ def action_summary(outcome: dict[str, Any]) -> str:
     if outcome["status"] == "rejected":
         return "Действие отклонено."
     if outcome["status"] == "failed":
-        return outcome.get("error", "Действие не выполнено.")
+        error = outcome.get("error", "Действие не выполнено.")
+        if outcome.get("context"):
+            return (
+                unperformed_summary({"tool": outcome["tool"], **outcome["context"]}) + " " + error
+            )
+        return error
     if outcome["status"] == "skipped":
-        return "Шаг пропущен после ошибки."
+        reason = outcome.get("error", "Шаг пропущен после ошибки.")
+        if outcome.get("context"):
+            return (
+                unperformed_summary({"tool": outcome["tool"], **outcome["context"]}) + " " + reason
+            )
+        return reason
     title = f"«{outcome['title']}»" if outcome.get("title") else ""
     name = f"«{outcome['name']}»" if outcome.get("name") else ""
     labels = {
