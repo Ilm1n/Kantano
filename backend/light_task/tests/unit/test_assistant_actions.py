@@ -1,3 +1,4 @@
+# ruff: noqa: RUF001
 from __future__ import annotations
 
 from typing import Any
@@ -11,6 +12,7 @@ from pydantic import ValidationError
 
 from src.assistant import graph as graph_module
 from src.assistant.provider import ModelAnswer
+from src.assistant.queries import ActionObjectUnavailableError
 from src.assistant.tool_schemas import CreateTask, UpdateTask, validate_write
 from src.assistant.use_cases import results_summary
 from src.errors import ErrorCode
@@ -344,6 +346,9 @@ async def test_dependent_plan_resolves_results_and_stops_after_known_failure(
             "skipped",
             "skipped",
         ]
+        summary = results_summary(state["action_results"])
+        assert "Не создан тег «Feature»" in summary
+        assert "Не создана задача «Task»" in summary
     else:
         assert tools.writes[2]["column_id"] == 42
         assert tools.writes[2]["tag_ids"] == [7]
@@ -537,3 +542,122 @@ async def test_legacy_pending_single_action_can_be_resumed(
 
 def test_rejected_plan_has_one_readable_summary() -> None:
     assert results_summary([{"status": "rejected"}] * 3) == "План отклонён. Изменения не внесены."
+
+
+@pytest.mark.asyncio
+async def test_missing_object_rejects_all_proposals_before_approval(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class MissingTaskTools(RecordingTools):
+        async def describe_action(self, name: str, args: dict[str, Any]) -> dict[str, Any]:
+            if args.get("task_id") == 999:
+                raise ActionObjectUnavailableError("Задача не найдена в выбранном проекте.")
+            return await super().describe_action(name, args)
+
+    calls = 0
+
+    async def call_model(messages: list[BaseMessage], *args: Any) -> ModelAnswer:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return model_answer(
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {"name": "CreateColumn", "id": "create", "args": {"name": "Работа"}},
+                        {
+                            "name": "MoveTask",
+                            "id": "move",
+                            "args": {"task_id": 999, "new_column_id": 1},
+                        },
+                    ],
+                )
+            )
+        replies = [m for m in messages if isinstance(m, ToolMessage)]
+        assert {m.tool_call_id for m in replies} == {"create", "move"}
+        assert "Не угадывай ID" in str(next(m.content for m in replies if m.tool_call_id == "move"))
+        return model_answer(AIMessage(content="Какую задачу переместить?"))
+
+    monkeypatch.setattr(graph_module, "call_model", call_model)
+    tools = MissingTaskTools()
+    graph = graph_module.build_graph(InMemorySaver(), tools)
+    config = {"configurable": {"thread_id": str(uuid4())}}
+    state = await graph.ainvoke({"messages": [HumanMessage(content="Создай и перемести")]}, config)
+    assert state["proposed_action"] is None
+    assert tools.writes == []
+    assert not (await graph.aget_state(config)).next
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("approve", [True, False])
+async def test_stale_plan_is_checked_before_first_write(
+    monkeypatch: pytest.MonkeyPatch,
+    approve: bool,
+) -> None:
+    class StaleTools(RecordingTools):
+        missing = False
+
+        async def describe_action(self, name: str, args: dict[str, Any]) -> dict[str, Any]:
+            if self.missing:
+                raise ActionObjectUnavailableError(
+                    "Задача не найдена в выбранном проекте.", step_id="move"
+                )
+            return {
+                "steps": [
+                    args["steps"][0],
+                    {**args["steps"][1], "display": {"task_id": "Старая задача"}},
+                ]
+            }
+
+    async def call_model(*args: Any) -> ModelAnswer:
+        return model_answer(
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "ExecutePlan",
+                        "id": "plan",
+                        "args": {
+                            "steps": [
+                                {
+                                    "id": "create",
+                                    "tool": "CreateTask",
+                                    "args": {"title": "Новая задача", "column_id": 1},
+                                },
+                                {
+                                    "id": "move",
+                                    "tool": "MoveTask",
+                                    "args": {"task_id": 2, "new_column_id": 1},
+                                },
+                            ]
+                        },
+                    }
+                ],
+            )
+        )
+
+    saved: list[bool] = []
+
+    async def record(outcomes: list[dict[str, Any]], executing: bool) -> None:
+        saved.append(executing)
+
+    monkeypatch.setattr(graph_module, "call_model", call_model)
+    tools = StaleTools()
+    saver = InMemorySaver()
+    config = {"configurable": {"thread_id": str(uuid4())}}
+    graph = graph_module.build_graph(saver, tools, record)
+    await graph.ainvoke({"messages": [HumanMessage(content="Создай и перемести")]}, config)
+    tools.missing = True
+    graph = graph_module.build_graph(saver, tools, record)
+    state = await graph.ainvoke(Command(resume=approve), config)
+    assert tools.writes == []
+    assert saved == [False, False]
+    assert [r["status"] for r in state["action_results"]] == (
+        ["skipped", "failed"] if approve else ["rejected", "rejected"]
+    )
+    if approve:
+        summary = results_summary(state["action_results"])
+        assert "Не создана задача «Новая задача»" in summary
+        assert "Не перемещена задача «Старая задача»" in summary
+        assert "Задача не найдена" in summary
+    assert not (await graph.aget_state(config)).next

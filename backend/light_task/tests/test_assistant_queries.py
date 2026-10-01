@@ -12,7 +12,7 @@ from test_create_task_slice import _create_column, _create_project, _register_an
 
 from src.assistant.dependencies import make_assistant_tools
 from src.assistant.dto import ProjectScope
-from src.assistant.queries import AssistantProjectQueries
+from src.assistant.queries import ActionObjectUnavailableError, AssistantProjectQueries
 from src.boards.models import Task
 from src.db.database import db_helper
 
@@ -88,6 +88,47 @@ async def _exercise_summaries(project_id: int, other_id: int, user: dict[str, An
     assert (await other_queries.read("SearchTasks", {}))["tasks"] == []
     with pytest.raises(ValueError, match="Task not found in this project"):
         await other_queries.read("GetTask", {"task_id": task["task_id"]})
+    for name, args in (
+        ("UpdateTask", {"task_id": task["task_id"]}),
+        ("CreateTask", {"column_id": column["column_id"]}),
+        ("MoveTask", {"new_column_id": column["column_id"]}),
+        ("MoveColumn", {"before_column_id": column["column_id"]}),
+        ("UpdateTag", {"tag_id": tag["tag_id"]}),
+        ("UpdateTask", {"tag_ids": [tag["tag_id"]]}),
+    ):
+        with pytest.raises(ActionObjectUnavailableError):
+            await other_queries.describe_action(name, args)
+    with pytest.raises(ActionObjectUnavailableError, match="Исполнитель"):
+        await tools.describe_action("UpdateTask", {"task_id": task["task_id"], "assignee_id": -1})
+    assert await tools.describe_action("UpdateTask", {"assignee_id": None, "tag_ids": []}) == {}
+    assert await tools.describe_action("MoveColumn", {"before_column_id": None}) == {}
+    # Old pending cards can still be read when an object has disappeared.
+    assert await other_queries.describe_action(
+        "UpdateTask", {"task_id": task["task_id"]}, validate=False
+    ) == {"task_id": "Не найдено в проекте"}
+    plan = {
+        "steps": [
+            {"id": "column", "tool": "CreateColumn", "args": {"name": "Новая колонка"}},
+            {"id": "tag", "tool": "CreateTag", "args": {"name": "Новый тег"}},
+            {
+                "id": "task",
+                "tool": "CreateTask",
+                "args": {
+                    "title": "Новая задача",
+                    "column_id": "$column.column_id",
+                    "tag_ids": ["$tag.tag_id", tag["tag_id"]],
+                    "assignee_id": user["id"],
+                },
+            },
+        ]
+    }
+    display = await tools.describe_action("ExecutePlan", plan)
+    assert display["steps"][2]["display"]["column_id"] == "Новая колонка"
+    assert display["steps"][2]["display"]["tag_ids"] == ["Новый тег", "Баг"]
+    plan["steps"][2]["args"]["tag_ids"] = ["$tag.tag_id", -1]
+    with pytest.raises(ActionObjectUnavailableError) as error:
+        await tools.describe_action("ExecutePlan", plan)
+    assert error.value.step_id == "task"
 
 
 def test_task_search_pages_have_stable_order_and_preserve_regular_api(client: TestClient) -> None:
