@@ -67,6 +67,9 @@ Repository Secrets: `ASSISTANT_GOOGLE_API_KEY`, `ASSISTANT_GROQ_API_KEY`.
 `ASSISTANT_GIGACHAT_CREDENTIALS` (ключ авторизации) и при необходимости Variable
 `ASSISTANT_GIGACHAT_MODEL` (по умолчанию `GigaChat-2`). Google/Groq в этом режиме
 не вызываются. Сертификат поставляется в backend-образе; ручная установка на VPS не нужна.
+Для цепочки Ultra → Max → Pro → Lite задайте Variable `ASSISTANT_GIGACHAT_MODELS`:
+`["GigaChat-3-Ultra","GigaChat-2-Max","GigaChat-2-Pro","GigaChat-2"]`.
+Непустой список имеет приоритет над `ASSISTANT_GIGACHAT_MODEL`; без списка используется одна модель.
 Workflow записывает настройки в `LIGHTTASK_CONFIG__ASSISTANT__*` в `.env.backend`
 при каждом деплое. Без переменных помощник выключен; режим по умолчанию — `cloud`.
 

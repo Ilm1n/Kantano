@@ -1,3 +1,4 @@
+# ruff: noqa: RUF001
 from __future__ import annotations
 
 import re
@@ -36,9 +37,10 @@ class PlanStep(BaseModel):
 class ExecutePlan(BaseModel):
     """Propose an ordered plan of up to 10 changes for one confirmation.
 
-    Use for multiple or dependent changes. Example: CreateColumn (id=column), then
+    Use for ALL changes, including a single change. Include the entire requested
+    set of changes before asking for approval. Example: CreateColumn (id=column), then
     CreateTask with column_id='$column.column_id'. Existing IDs come from read tools.
-    Each step uses its named tool's schema. After approval, returns an actions list
+    Each step uses the operation schema supplied in the tool description. After approval, returns an actions list
     with per-step results. On failure or stop, completed changes remain; later steps
     are skipped. This is not an all-or-nothing transaction.
     """
@@ -48,6 +50,54 @@ class ExecutePlan(BaseModel):
         max_length=MAX_ACTIONS,
         description="All requested changes in execution order; references only target earlier creation steps",
     )
+
+
+def plan_examples() -> list[dict[str, Any]]:
+    return [
+        {
+            "request": "Создай колонку Планы",
+            "params": {
+                "steps": [{"id": "plans", "tool": "CreateColumn", "args": {"name": "Планы"}}]
+            },
+        },
+        {
+            "request": "Создай колонки Планы и Работа, в каждой создай задачу Подготовить отчёт",
+            "params": {
+                "steps": [
+                    {"id": "plans", "tool": "CreateColumn", "args": {"name": "Планы"}},
+                    {"id": "work", "tool": "CreateColumn", "args": {"name": "Работа"}},
+                    {
+                        "id": "report1",
+                        "tool": "CreateTask",
+                        "args": {"title": "Подготовить отчёт", "column_id": "$plans.column_id"},
+                    },
+                    {
+                        "id": "report2",
+                        "tool": "CreateTask",
+                        "args": {"title": "Подготовить отчёт", "column_id": "$work.column_id"},
+                    },
+                ]
+            },
+        },
+        {
+            "request": "Создай колонку Проверка, новый синий тег Баг и задачу Исправить ошибку с этим тегом",
+            "params": {
+                "steps": [
+                    {"id": "review", "tool": "CreateColumn", "args": {"name": "Проверка"}},
+                    {"id": "bug", "tool": "CreateTag", "args": {"name": "Баг", "color": "#0000FF"}},
+                    {
+                        "id": "fix",
+                        "tool": "CreateTask",
+                        "args": {
+                            "title": "Исправить ошибку",
+                            "column_id": "$review.column_id",
+                            "tag_ids": ["$bug.tag_id"],
+                        },
+                    },
+                ]
+            },
+        },
+    ]
 
 
 def validate_plan(

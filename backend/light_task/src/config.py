@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import Literal
 from urllib.parse import quote
 
-from pydantic import BaseModel, Field, PostgresDsn, computed_field, model_validator
+from pydantic import BaseModel, Field, PostgresDsn, computed_field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -173,6 +173,7 @@ class AssistantConfig(BaseModel):
     groq_api_key: str = ""
     gigachat_credentials: str = ""
     gigachat_model: str = "GigaChat-2"
+    gigachat_models: list[str] = Field(default_factory=list, max_length=4)
     gigachat_scope: str = "GIGACHAT_API_PERS"
     gigachat_ca_bundle_file: Path = BASE_DIR / "tls" / "russian_trusted_root_ca.pem"
     local_base_url: str = "http://host.docker.internal:1234/v1"
@@ -181,6 +182,15 @@ class AssistantConfig(BaseModel):
     primary_model: str = "gemini-3.1-flash-lite"
     google_fallback_model: str = "gemma-4-26b-a4b-it"
     groq_model: str = "openai/gpt-oss-20b"
+
+    @field_validator("gigachat_models")
+    @classmethod
+    def validate_gigachat_models(cls, value: list[str]) -> list[str]:
+        if any(not model.strip() or model != model.strip() for model in value):
+            raise ValueError("GigaChat model names must be nonempty and have no outer whitespace")
+        if len(value) != len(set(value)):
+            raise ValueError("GigaChat model names must be unique")
+        return value
 
 
 class ObservabilityConfig(BaseModel):

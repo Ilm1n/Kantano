@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from typing import Any
 
+from langchain_core.utils.function_calling import convert_to_openai_tool
 from pydantic import BaseModel, Field, field_validator
 
-from src.assistant.plans import ExecutePlan, validate_plan
+from src.assistant.plans import ExecutePlan, plan_examples, validate_plan
 from src.boards.constants import TaskPriority
 from src.constants import HEX_COLOR_PATTERN
 
@@ -229,10 +231,7 @@ class RemoveTagFromTask(BaseModel):
     tag_id: int = Field(description="ID of the tag to detach, from GetTask or ProjectOverview")
 
 
-TOOL_SCHEMAS: list[type[BaseModel]] = [
-    ProjectOverview,
-    SearchTasks,
-    GetTask,
+WRITE_SCHEMAS: list[type[BaseModel]] = [
     CreateTask,
     UpdateTask,
     MoveTask,
@@ -243,20 +242,24 @@ TOOL_SCHEMAS: list[type[BaseModel]] = [
     UpdateTag,
     AddTagToTask,
     RemoveTagFromTask,
-    ExecutePlan,
 ]
-WRITE_TOOLS = {
-    "CreateTask",
-    "UpdateTask",
-    "MoveTask",
-    "CreateColumn",
-    "RenameColumn",
-    "MoveColumn",
-    "CreateTag",
-    "UpdateTag",
-    "AddTagToTask",
-    "RemoveTagFromTask",
-}
+WRITE_TOOLS = {schema.__name__ for schema in WRITE_SCHEMAS}
+ToolSchema = type[BaseModel] | dict[str, Any]
+
+
+def plan_tool_schema() -> dict[str, Any]:
+    schema = convert_to_openai_tool(ExecutePlan)
+    operations = [convert_to_openai_tool(operation)["function"] for operation in WRITE_SCHEMAS]
+    schema["function"]["description"] += (
+        "\nStep operations (these are not standalone tools):\n"
+        + json.dumps(operations, ensure_ascii=False)
+        + "\nExamples (illustrative requests, not current project data):\n"
+        + json.dumps(plan_examples(), ensure_ascii=False)
+    )
+    return schema
+
+
+TOOL_SCHEMAS: list[ToolSchema] = [ProjectOverview, SearchTasks, GetTask, plan_tool_schema()]
 
 
 def normalize_priority(value: Any) -> Any:
@@ -274,5 +277,5 @@ def normalize_priority(value: Any) -> Any:
 def validate_write(name: str, args: dict[str, Any]) -> dict[str, Any]:
     if name == "ExecutePlan":
         return validate_plan(args, validate_write)
-    schema = next(schema for schema in TOOL_SCHEMAS if schema.__name__ == name)
+    schema = next(schema for schema in WRITE_SCHEMAS if schema.__name__ == name)
     return schema.model_validate(args).model_dump(mode="json", exclude_unset=True)

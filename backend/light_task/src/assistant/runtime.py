@@ -19,6 +19,7 @@ from src.assistant.dto import ProjectScope, RunExecution, RunMetadata
 from src.assistant.graph import AssistantState, RunStoppedError, build_graph
 from src.assistant.tools import AssistantTools
 from src.assistant.use_cases import AssistantRunLifecycle
+from src.cache.redis import RedisCache
 from src.config import settings
 from src.observability.metrics import record_assistant_run_tokens
 
@@ -48,10 +49,13 @@ class AssistantRuntime:
         checkpointer_factory: Callable[
             [], AbstractAsyncContextManager[AsyncPostgresSaver]
         ] = open_checkpointer,
+        *,
+        quota_cache: RedisCache | None = None,
     ) -> None:
         self._tools_factory = tools_factory
         self._lifecycle = lifecycle
         self._checkpointer_factory = checkpointer_factory
+        self._quota_cache = quota_cache
 
     async def interrupt(self, run_id: UUID) -> None:
         await self._lifecycle.interrupt(run_id)
@@ -100,6 +104,7 @@ class AssistantRuntime:
                     tools,
                     on_action_result=record_action_result,
                     should_stop=lambda: self._lifecycle.stop_requested(run_id),
+                    quota_cache=self._quota_cache,
                 )
                 streamed_node_text = ""
                 async for mode, event in graph.astream(

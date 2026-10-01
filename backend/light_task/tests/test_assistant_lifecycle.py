@@ -68,7 +68,7 @@ def pending_plan(
         ]
     )
 
-    async def call_model(*args: Any) -> ModelAnswer:
+    async def call_model(*args: Any, **kwargs: Any) -> ModelAnswer:
         return ModelAnswer(next(replies), "test", "test", False, 0)
 
     monkeypatch.setattr(graph_module, "call_model", call_model)
